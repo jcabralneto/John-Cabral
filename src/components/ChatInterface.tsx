@@ -3,20 +3,29 @@ import { supabase } from '../lib/supabase'
 import { LoadingSpinner } from './LoadingSpinner'
 import type { User } from '@supabase/supabase-js'
 import type { ChatMessage, TripData } from '../types'
-import type { MultiAIManager } from '../services/aiManager'
 
 interface ChatInterfaceProps {
   user: User
-  aiManager: MultiAIManager
   onTripSaved: () => void
   onError: (error: string) => void
 }
 
-export function ChatInterface({ user, aiManager, onTripSaved, onError }: ChatInterfaceProps) {
+type ChatStep = 'initial' | 'date' | 'country' | 'city' | 'tickets' | 'lodging' | 'allowances' | 'cost_center' | 'confirmation'
+
+export function ChatInterface({ user, onTripSaved, onError }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [inputMessage, setInputMessage] = useState('')
-  const [chatLoading, setChatLoading] = useState(false)
-  const [pendingTripData, setPendingTripData] = useState<TripData | null>(null)
+  const [currentStep, setCurrentStep] = useState<ChatStep>('initial')
+  const [tripData, setTripData] = useState<TripData>({
+    trip_date: null,
+    destination_country: null,
+    destination_city: null,
+    ticket_cost: null,
+    accommodation_cost: null,
+    daily_allowances: null,
+    trip_type: null
+  })
+  const [costCenter, setCostCenter] = useState<string>('')
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
@@ -24,91 +33,211 @@ export function ChatInterface({ user, aiManager, onTripSaved, onError }: ChatInt
   }, [])
 
   const initializeChat = () => {
-    if (messages.length === 0) {
-      setMessages([{
-        type: 'ai',
-        content: '👋 Olá! Sou seu assistente para registro de viagens. \n\nDescreva sua viagem e eu vou extrair automaticamente:\n• Data da viagem\n• Destino (país e cidade)\n• Custos (passagem, hospedagem, diárias)\n• Tipo da viagem\n• Centro de custo (opcional)\n\nExemplo: "Preciso registrar viagem para Buenos Aires dia 20/08, gastei R$ 1.200 na passagem, R$ 800 no hotel e R$ 400 em diárias"',
-        timestamp: new Date()
-      }])
-    }
+    setMessages([{
+      type: 'ai',
+      content: '👋 Olá! Vou te ajudar a registrar sua viagem passo a passo.\n\nVamos começar com a data da viagem.\n\n📅 **Qual foi a data da sua viagem?**\n\nExemplo: 24/05/2025 ou 24/05/25',
+      timestamp: new Date()
+    }])
+    setCurrentStep('date')
   }
 
-  const handleChatMessage = async () => {
+  const validateDate = (dateStr: string): string | null => {
+    // Try different date formats
+    const formats = [
+      /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/, // DD/MM/YYYY
+      /^(\d{1,2})\/(\d{1,2})\/(\d{2})$/, // DD/MM/YY
+      /^(\d{4})-(\d{1,2})-(\d{1,2})$/   // YYYY-MM-DD
+    ]
+
+    for (const format of formats) {
+      const match = dateStr.match(format)
+      if (match) {
+        let day, month, year
+        
+        if (format === formats[2]) { // YYYY-MM-DD
+          year = parseInt(match[1])
+          month = parseInt(match[2])
+          day = parseInt(match[3])
+        } else { // DD/MM/YYYY or DD/MM/YY
+          day = parseInt(match[1])
+          month = parseInt(match[2])
+          year = parseInt(match[3])
+          
+          // Convert 2-digit year to 4-digit
+          if (year < 100) {
+            year = year < 50 ? 2000 + year : 1900 + year
+          }
+        }
+
+        // Validate date
+        if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+          return `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`
+        }
+      }
+    }
+    return null
+  }
+
+  const validateCurrency = (value: string): number | null => {
+    // Remove R$, spaces, and convert comma to dot
+    const cleanValue = value.replace(/[R$\s]/g, '').replace(',', '.')
+    const numValue = parseFloat(cleanValue)
+    return isNaN(numValue) ? null : numValue
+  }
+
+  const classifyTripType = (country: string): string => {
+    const lowerCountry = country.toLowerCase()
+    
+    if (lowerCountry === 'brasil' || lowerCountry === 'brazil') {
+      return 'Nacional'
+    }
+    
+    const southAmericanCountries = [
+      'argentina', 'chile', 'peru', 'colômbia', 'colombia', 'venezuela', 
+      'uruguai', 'uruguay', 'paraguai', 'paraguay', 'bolívia', 'bolivia', 
+      'equador', 'ecuador', 'guiana', 'suriname'
+    ]
+    
+    if (southAmericanCountries.includes(lowerCountry)) {
+      return 'Continental'
+    }
+    
+    return 'Intercontinental'
+  }
+
+  const handleStepResponse = async () => {
     if (!inputMessage.trim()) return
 
-    const userMessage = inputMessage.trim()
+    const userInput = inputMessage.trim()
     setInputMessage('')
-    setChatLoading(true)
 
+    // Add user message
     const newMessages = [...messages, {
       type: 'user' as const,
-      content: userMessage,
+      content: userInput,
       timestamp: new Date()
     }]
     setMessages(newMessages)
 
-    try {
-      const tripData = await aiManager.extractTripData(userMessage)
-      
-      const aiResponse: ChatMessage = {
-        type: 'ai',
-        content: 'Analisando sua mensagem...',
-        timestamp: new Date()
-      }
-      setMessages([...newMessages, aiResponse])
+    let aiResponse = ''
+    let nextStep: ChatStep = currentStep
 
-      const hasValidData = tripData.destination_country || tripData.destination_city || 
-                         tripData.ticket_cost || tripData.accommodation_cost || tripData.daily_allowances
+    switch (currentStep) {
+      case 'date':
+        const validDate = validateDate(userInput)
+        if (validDate) {
+          setTripData(prev => ({ ...prev, trip_date: validDate }))
+          aiResponse = '✅ Data registrada!\n\n🌍 **Qual é o país de destino?**\n\nExemplo: Brasil, Argentina, França, etc.'
+          nextStep = 'country'
+        } else {
+          aiResponse = '❌ Data inválida. Por favor, use um dos formatos:\n• DD/MM/AAAA (ex: 24/05/2025)\n• DD/MM/AA (ex: 24/05/25)\n\n📅 **Qual foi a data da sua viagem?**'
+        }
+        break
 
-      if (hasValidData) {
-        setPendingTripData(tripData)
+      case 'country':
+        if (userInput.length >= 2) {
+          const tripType = classifyTripType(userInput)
+          setTripData(prev => ({ 
+            ...prev, 
+            destination_country: userInput,
+            trip_type: tripType
+          }))
+          aiResponse = `✅ País registrado: ${userInput}\n🎯 Tipo de viagem: ${tripType}\n\n🏙️ **Qual é a cidade de destino?**\n\nExemplo: São Paulo, Buenos Aires, Paris, etc.`
+          nextStep = 'city'
+        } else {
+          aiResponse = '❌ Por favor, informe um país válido.\n\n🌍 **Qual é o país de destino?**'
+        }
+        break
+
+      case 'city':
+        if (userInput.length >= 2) {
+          setTripData(prev => ({ ...prev, destination_city: userInput }))
+          aiResponse = `✅ Cidade registrada: ${userInput}\n\n✈️ **Qual foi o valor gasto com passagens?**\n\nExemplo: R$ 1200 ou 1200,50`
+          nextStep = 'tickets'
+        } else {
+          aiResponse = '❌ Por favor, informe uma cidade válida.\n\n🏙️ **Qual é a cidade de destino?**'
+        }
+        break
+
+      case 'tickets':
+        const ticketCost = validateCurrency(userInput)
+        if (ticketCost !== null) {
+          setTripData(prev => ({ ...prev, ticket_cost: ticketCost }))
+          aiResponse = `✅ Valor das passagens: R$ ${ticketCost.toFixed(2)}\n\n🏨 **Qual foi o valor gasto com hospedagem?**\n\nExemplo: R$ 800 ou 800,00`
+          nextStep = 'lodging'
+        } else {
+          aiResponse = '❌ Valor inválido. Use apenas números.\n\n✈️ **Qual foi o valor gasto com passagens?**\nExemplo: R$ 1200 ou 1200,50'
+        }
+        break
+
+      case 'lodging':
+        const lodgingCost = validateCurrency(userInput)
+        if (lodgingCost !== null) {
+          setTripData(prev => ({ ...prev, accommodation_cost: lodgingCost }))
+          aiResponse = `✅ Valor da hospedagem: R$ ${lodgingCost.toFixed(2)}\n\n💰 **Qual foi o valor das diárias/alimentação?**\n\nExemplo: R$ 450 ou 450,00`
+          nextStep = 'allowances'
+        } else {
+          aiResponse = '❌ Valor inválido. Use apenas números.\n\n🏨 **Qual foi o valor gasto com hospedagem?**\nExemplo: R$ 800 ou 800,00'
+        }
+        break
+
+      case 'allowances':
+        const allowancesCost = validateCurrency(userInput)
+        if (allowancesCost !== null) {
+          setTripData(prev => ({ ...prev, daily_allowances: allowancesCost }))
+          aiResponse = `✅ Valor das diárias: R$ ${allowancesCost.toFixed(2)}\n\n🏢 **Centro de custo (opcional):**\n\nSe não tiver, digite "não" ou "pular"`
+          nextStep = 'cost_center'
+        } else {
+          aiResponse = '❌ Valor inválido. Use apenas números.\n\n💰 **Qual foi o valor das diárias/alimentação?**\nExemplo: R$ 450 ou 450,00'
+        }
+        break
+
+      case 'cost_center':
+        const skipWords = ['não', 'nao', 'pular', 'skip', 'n']
+        if (skipWords.includes(userInput.toLowerCase())) {
+          setCostCenter('Não informado')
+        } else {
+          setCostCenter(userInput)
+        }
         
-        const confirmationMessage: ChatMessage = {
-          type: 'ai',
-          content: 'confirmation',
-          data: tripData,
-          timestamp: new Date()
+        // Show confirmation
+        const finalTripData = { ...tripData }
+        if (currentStep === 'cost_center') {
+          // Update with the latest allowances value that was just set
+          finalTripData.daily_allowances = tripData.daily_allowances
         }
-        setMessages([...newMessages, confirmationMessage])
-      } else {
-        const helpMessage: ChatMessage = {
-          type: 'ai',
-          content: 'Não consegui identificar todos os dados da sua viagem. Por favor, informe:\n\n• Data da viagem\n• País e cidade de destino\n• Valor da passagem (R$)\n• Valor da hospedagem (R$)\n• Valor das diárias (R$)\n• Centro de custo (opcional)\n\nExemplo: "Viagem para São Paulo dia 15/07, passagem R$ 800, hotel R$ 300, diárias R$ 200, centro de custo TI"',
-          timestamp: new Date()
-        }
-        setMessages([...newMessages, helpMessage])
-      }
-
-    } catch (error) {
-      console.error('Erro no chat:', error)
-      const errorMessage: ChatMessage = {
-        type: 'ai',
-        content: 'Desculpe, houve um erro ao processar sua mensagem. Tente novamente ou digite as informações de forma mais clara.',
-        timestamp: new Date()
-      }
-      setMessages([...newMessages, errorMessage])
-    } finally {
-      setChatLoading(false)
+        
+        aiResponse = 'confirmation'
+        nextStep = 'confirmation'
+        break
     }
+
+    // Add AI response
+    const responseMessage: ChatMessage = {
+      type: 'ai',
+      content: aiResponse,
+      data: aiResponse === 'confirmation' ? tripData : undefined,
+      timestamp: new Date()
+    }
+
+    setMessages([...newMessages, responseMessage])
+    setCurrentStep(nextStep)
   }
 
   const confirmTripData = async () => {
-    if (!pendingTripData) return
-
     try {
       setLoading(true)
       
-      // Map the data to the correct database schema
       const tripInsert = {
         user_id: user.id,
-        travel_date: pendingTripData.trip_date,
-        destination_country: pendingTripData.destination_country,
-        destination_city: pendingTripData.destination_city,
-        cost_tickets: pendingTripData.ticket_cost,
-        cost_lodging: pendingTripData.accommodation_cost,
-        cost_daily_allowances: pendingTripData.daily_allowances,
-        cost_center: 'Não informado', // Default value
-        trip_type: pendingTripData.trip_type
+        travel_date: tripData.trip_date,
+        destination_country: tripData.destination_country,
+        destination_city: tripData.destination_city,
+        cost_tickets: tripData.ticket_cost,
+        cost_lodging: tripData.accommodation_cost,
+        cost_daily_allowances: tripData.daily_allowances,
+        cost_center: costCenter || 'Não informado',
+        trip_type: tripData.trip_type
       }
 
       const { error } = await supabase
@@ -119,12 +248,24 @@ export function ChatInterface({ user, aiManager, onTripSaved, onError }: ChatInt
 
       const successMessage: ChatMessage = {
         type: 'ai',
-        content: '✅ Viagem registrada com sucesso! Você pode ver ela no seu dashboard.',
+        content: '✅ Viagem registrada com sucesso!\n\nVocê pode ver ela no seu dashboard. Deseja registrar outra viagem?',
         timestamp: new Date()
       }
-      setMessages([...messages, successMessage])
+      setMessages(prev => [...prev, successMessage])
 
-      setPendingTripData(null)
+      // Reset for new trip
+      setTripData({
+        trip_date: null,
+        destination_country: null,
+        destination_city: null,
+        ticket_cost: null,
+        accommodation_cost: null,
+        daily_allowances: null,
+        trip_type: null
+      })
+      setCostCenter('')
+      setCurrentStep('initial')
+      
       onTripSaved()
 
     } catch (error: any) {
@@ -135,19 +276,35 @@ export function ChatInterface({ user, aiManager, onTripSaved, onError }: ChatInt
     }
   }
 
-  const rejectTripData = () => {
-    setPendingTripData(null)
-    const retryMessage: ChatMessage = {
+  const startNewTrip = () => {
+    setTripData({
+      trip_date: null,
+      destination_country: null,
+      destination_city: null,
+      ticket_cost: null,
+      accommodation_cost: null,
+      daily_allowances: null,
+      trip_type: null
+    })
+    setCostCenter('')
+    
+    const newTripMessage: ChatMessage = {
       type: 'ai',
-      content: 'Ok, vamos tentar novamente. Descreva sua viagem com mais detalhes.',
+      content: '🆕 Vamos registrar uma nova viagem!\n\n📅 **Qual foi a data da sua viagem?**\n\nExemplo: 24/05/2025 ou 24/05/25',
       timestamp: new Date()
     }
-    setMessages([...messages, retryMessage])
+    setMessages(prev => [...prev, newTripMessage])
+    setCurrentStep('date')
   }
 
   const formatCurrency = (value: number | null) => {
     if (!value) return '0,00'
     return value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })
+  }
+
+  const formatDate = (dateStr: string | null) => {
+    if (!dateStr) return 'Não informado'
+    return new Date(dateStr).toLocaleDateString('pt-BR')
   }
 
   return (
@@ -156,7 +313,7 @@ export function ChatInterface({ user, aiManager, onTripSaved, onError }: ChatInt
       
       <div className="chat-container">
         <div className="chat-header">
-          🤖 Assistente de Viagem IA
+          🤖 Assistente de Viagem - Passo a Passo
         </div>
         
         <div className="chat-messages">
@@ -166,16 +323,22 @@ export function ChatInterface({ user, aiManager, onTripSaved, onError }: ChatInt
                 {message.content === 'confirmation' && message.data ? (
                   <div className="confirmation-card">
                     <div className="confirmation-title">
-                      📋 Dados extraídos da sua viagem:
+                      📋 Resumo da sua viagem:
                     </div>
                     <div className="confirmation-data">
-                      <p><strong>📅 Data:</strong> {message.data.trip_date || 'Não informado'}</p>
-                      <p><strong>🌍 País:</strong> {message.data.destination_country || 'Não informado'}</p>
-                      <p><strong>🏙️ Cidade:</strong> {message.data.destination_city || 'Não informado'}</p>
+                      <p><strong>📅 Data:</strong> {formatDate(message.data.trip_date)}</p>
+                      <p><strong>🌍 País:</strong> {message.data.destination_country}</p>
+                      <p><strong>🏙️ Cidade:</strong> {message.data.destination_city}</p>
                       <p><strong>✈️ Passagem:</strong> R$ {formatCurrency(message.data.ticket_cost)}</p>
                       <p><strong>🏨 Hospedagem:</strong> R$ {formatCurrency(message.data.accommodation_cost)}</p>
                       <p><strong>💰 Diárias:</strong> R$ {formatCurrency(message.data.daily_allowances)}</p>
-                      <p><strong>🎯 Tipo:</strong> {message.data.trip_type || 'Não classificado'}</p>
+                      <p><strong>🏢 Centro de Custo:</strong> {costCenter || 'Não informado'}</p>
+                      <p><strong>🎯 Tipo:</strong> {message.data.trip_type}</p>
+                      <p><strong>💵 Total:</strong> R$ {formatCurrency(
+                        (message.data.ticket_cost || 0) + 
+                        (message.data.accommodation_cost || 0) + 
+                        (message.data.daily_allowances || 0)
+                      )}</p>
                     </div>
                     <div className="confirmation-buttons">
                       <button 
@@ -183,32 +346,35 @@ export function ChatInterface({ user, aiManager, onTripSaved, onError }: ChatInt
                         onClick={confirmTripData}
                         disabled={loading}
                       >
-                        {loading ? 'Salvando...' : '✅ Confirmar'}
+                        {loading ? 'Salvando...' : '✅ Confirmar e Salvar'}
                       </button>
                       <button 
                         className="btn btn-secondary"
-                        onClick={rejectTripData}
+                        onClick={startNewTrip}
                       >
-                        ❌ Corrigir
+                        ❌ Recomeçar
                       </button>
                     </div>
                   </div>
                 ) : (
                   <div style={{whiteSpace: 'pre-line'}}>
                     {message.content}
+                    {message.type === 'ai' && currentStep === 'initial' && message.content.includes('Deseja registrar outra viagem?') && (
+                      <div style={{marginTop: '1rem'}}>
+                        <button 
+                          className="btn btn-primary"
+                          onClick={startNewTrip}
+                          style={{marginRight: '0.5rem'}}
+                        >
+                          🆕 Nova Viagem
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
             </div>
           ))}
-          
-          {chatLoading && (
-            <div className="message ai">
-              <div className="message-content">
-                <LoadingSpinner text="Processando com IA..." />
-              </div>
-            </div>
-          )}
         </div>
         
         <div className="chat-input">
@@ -216,14 +382,23 @@ export function ChatInterface({ user, aiManager, onTripSaved, onError }: ChatInt
             type="text"
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && !chatLoading && handleChatMessage()}
-            placeholder="Descreva sua viagem..."
-            disabled={chatLoading}
+            onKeyPress={(e) => e.key === 'Enter' && !loading && currentStep !== 'confirmation' && currentStep !== 'initial' && handleStepResponse()}
+            placeholder={
+              currentStep === 'date' ? 'Ex: 24/05/2025' :
+              currentStep === 'country' ? 'Ex: Brasil' :
+              currentStep === 'city' ? 'Ex: São Paulo' :
+              currentStep === 'tickets' ? 'Ex: R$ 1200' :
+              currentStep === 'lodging' ? 'Ex: R$ 800' :
+              currentStep === 'allowances' ? 'Ex: R$ 450' :
+              currentStep === 'cost_center' ? 'Ex: TI ou "não"' :
+              'Digite sua resposta...'
+            }
+            disabled={loading || currentStep === 'confirmation' || currentStep === 'initial'}
           />
           <button 
             className="btn btn-primary"
-            onClick={handleChatMessage}
-            disabled={chatLoading || !inputMessage.trim()}
+            onClick={handleStepResponse}
+            disabled={loading || !inputMessage.trim() || currentStep === 'confirmation' || currentStep === 'initial'}
           >
             Enviar
           </button>
