@@ -27,18 +27,38 @@ function App() {
 
   // Check for logged in user
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        setUser(session.user)
-        fetchUserProfile(session.user.id)
+    const initializeApp = async () => {
+      try {
+        console.log('🚀 Inicializando aplicação...')
+        
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+        
+        if (sessionError) {
+          console.error('❌ Erro ao obter sessão:', sessionError)
+          setError('Erro ao conectar com o servidor. Verifique sua conexão.')
+        } else if (session) {
+          console.log('✅ Sessão encontrada:', session.user.email)
+          setUser(session.user)
+          await fetchUserProfile(session.user.id)
+        } else {
+          console.log('ℹ️ Nenhuma sessão ativa')
+        }
+      } catch (error) {
+        console.error('❌ Erro na inicialização:', error)
+        setError('Erro ao inicializar aplicação.')
+      } finally {
+        setLoading(false)
       }
-      setLoading(false)
-    })
+    }
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    initializeApp()
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('🔄 Auth state changed:', event)
+      
       if (session) {
         setUser(session.user)
-        fetchUserProfile(session.user.id)
+        await fetchUserProfile(session.user.id)
       } else {
         setUser(null)
         setUserProfile(null)
@@ -51,6 +71,8 @@ function App() {
 
   const fetchUserProfile = async (userId: string) => {
     try {
+      console.log('👤 Buscando perfil do usuário:', userId)
+      
       // Try to get from users table first
       const { data: userData, error: userError } = await supabase
         .from('users')
@@ -59,57 +81,65 @@ function App() {
         .single()
 
       if (!userError && userData) {
+        console.log('✅ Perfil encontrado na tabela users:', userData)
         setUserProfile(userData)
         setCurrentView(userData.role === 'admin' ? 'adminDashboard' : 'userDashboard')
-        fetchTrips(userData.role === 'admin', userId)
+        await fetchTrips(userData.role === 'admin', userId)
         return
       }
 
-      // Fallback to profiles table
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
+      console.log('⚠️ Usuário não encontrado na tabela users, tentando criar...')
+      
+      // Create user if not exists
+      const newUser: UserProfile = {
+        id: userId,
+        name: user?.email?.split('@')[0] || 'Usuário',
+        email: user?.email || null,
+        role: user?.email === 'admin@gridspertise.com' ? 'admin' : 'regular'
+      }
+
+      const { data: createdUser, error: createError } = await supabase
+        .from('users')
+        .insert([newUser])
+        .select()
         .single()
 
-      if (!profileError && profileData) {
-        // Convert profile to user format
-        const userProfile: UserProfile = {
-          id: profileData.id,
-          name: profileData.email?.split('@')[0] || 'User',
-          email: profileData.email,
-          role: profileData.role,
-          created_at: profileData.created_at
-        }
-        setUserProfile(userProfile)
-        setCurrentView(userProfile.role === 'admin' ? 'adminDashboard' : 'userDashboard')
-        fetchTrips(userProfile.role === 'admin', userId)
-        return
+      if (createError) {
+        console.error('❌ Erro ao criar usuário:', createError)
+        throw createError
       }
 
-      throw new Error('User profile not found')
+      console.log('✅ Usuário criado:', createdUser)
+      setUserProfile(createdUser)
+      setCurrentView(createdUser.role === 'admin' ? 'adminDashboard' : 'userDashboard')
+      await fetchTrips(createdUser.role === 'admin', userId)
+
     } catch (error) {
-      console.error('Error fetching profile:', error)
+      console.error('❌ Erro ao buscar/criar perfil:', error)
       setError('Erro ao carregar perfil do usuário.')
     }
   }
 
   const fetchTrips = async (isAdmin = false, userId?: string) => {
     try {
+      console.log('🧳 Buscando viagens...', { isAdmin, userId })
       const tripsData = await DatabaseService.fetchTrips(userId, isAdmin)
       
       if (isAdmin) {
         setAllTrips(tripsData)
+        console.log('✅ Viagens admin carregadas:', tripsData.length)
       } else {
         setTrips(tripsData)
+        console.log('✅ Viagens usuário carregadas:', tripsData.length)
       }
     } catch (error) {
-      console.error('Error fetching trips:', error)
+      console.error('❌ Erro ao carregar viagens:', error)
       setError('Erro ao carregar viagens.')
     }
   }
 
   const handleLogout = async () => {
+    console.log('👋 Fazendo logout...')
     await supabase.auth.signOut()
   }
 
@@ -122,7 +152,7 @@ function App() {
     return (
       <div className="app">
         <div className="container loading-container">
-          <LoadingSpinner text="Carregando..." />
+          <LoadingSpinner text="Carregando aplicação..." />
         </div>
       </div>
     )
@@ -170,9 +200,9 @@ function App() {
           <ChatInterface 
             user={user}
             aiManager={aiManager}
-            onTripSaved={() => {
+            onTripSaved={async () => {
               setSuccess('Viagem registrada com sucesso!')
-              fetchTrips(userProfile?.role === 'admin', user.id)
+              await fetchTrips(userProfile?.role === 'admin', user.id)
             }}
             onError={setError}
           />
