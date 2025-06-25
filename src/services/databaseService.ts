@@ -2,44 +2,40 @@ import { supabase } from '../lib/supabase'
 import type { UserProfile, Trip, Budget } from '../types'
 
 export class DatabaseService {
-  // Fetch users from the correct table with proper RLS handling
+  // Fetch users from the correct table
   static async fetchUsers(): Promise<UserProfile[]> {
     try {
-      console.log('📊 Buscando usuários...')
-      
-      const { data: usersData, error: usersError } = await supabase
+      const { data, error } = await supabase
         .from('users')
-        .select('id, name, email, role')
+        .select('*')
         .order('name')
 
-      if (!usersError && usersData) {
-        console.log('✅ Loaded users from "users" table:', usersData.length)
-        return usersData
+      if (error) {
+        console.error('❌ Error fetching users:', error)
+        return []
       }
 
-      console.warn('⚠️ Erro ao carregar usuários:', usersError)
-      return []
+      console.log('✅ Loaded users:', data?.length || 0)
+      return data || []
     } catch (error) {
       console.error('❌ Error fetching users:', error)
       return []
     }
   }
 
-  // Fetch trips from the correct table
+  // Fetch trips with proper error handling
   static async fetchTrips(userId?: string, isAdmin = false): Promise<Trip[]> {
     try {
-      console.log('🧳 Buscando viagens...', { userId, isAdmin })
-      
-      // Simplified query without join to avoid RLS issues
-      let query = supabase.from('trips').select('*')
+      let query = supabase.from('trips').select(`
+        *,
+        users:user_id (name, email)
+      `)
 
       if (!isAdmin && userId) {
         query = query.eq('user_id', userId)
       }
 
-      const { data, error } = await query
-        .order('created_at', { ascending: false })
-        .limit(100)
+      const { data, error } = await query.order('created_at', { ascending: false })
 
       if (error) {
         console.error('❌ Error fetching trips:', error)
@@ -57,14 +53,11 @@ export class DatabaseService {
   // Fetch budgets
   static async fetchBudgets(): Promise<Budget[]> {
     try {
-      console.log('💰 Buscando orçamentos...')
-      
       const { data, error } = await supabase
         .from('budgets')
         .select('*')
         .order('year', { ascending: false })
         .order('month', { ascending: false })
-        .limit(50)
 
       if (error) {
         console.error('❌ Error fetching budgets:', error)
@@ -124,51 +117,33 @@ export class DatabaseService {
     }
 
     try {
-      console.log('🔍 Verificando tabelas do banco...')
-      
       // Check users table
-      try {
-        const { error: usersError } = await supabase
-          .from('users')
-          .select('id')
-          .limit(1)
-        results.users = !usersError
-      } catch (e) {
-        results.users = false
-      }
+      const { error: usersError } = await supabase
+        .from('users')
+        .select('id')
+        .limit(1)
+      results.users = !usersError
 
       // Check trips table
-      try {
-        const { error: tripsError } = await supabase
-          .from('trips')
-          .select('id')
-          .limit(1)
-        results.trips = !tripsError
-      } catch (e) {
-        results.trips = false
-      }
+      const { error: tripsError } = await supabase
+        .from('trips')
+        .select('id')
+        .limit(1)
+      results.trips = !tripsError
 
       // Check budgets table
-      try {
-        const { error: budgetsError } = await supabase
-          .from('budgets')
-          .select('id')
-          .limit(1)
-        results.budgets = !budgetsError
-      } catch (e) {
-        results.budgets = false
-      }
+      const { error: budgetsError } = await supabase
+        .from('budgets')
+        .select('id')
+        .limit(1)
+      results.budgets = !budgetsError
 
-      // Check legacy tables
-      try {
-        const { error: legacyError } = await supabase
-          .from('paises')
-          .select('id')
-          .limit(1)
-        results.legacy = !legacyError
-      } catch (e) {
-        results.legacy = false
-      }
+      // Check legacy tables (paises table as indicator)
+      const { error: legacyError } = await supabase
+        .from('paises')
+        .select('id')
+        .limit(1)
+      results.legacy = !legacyError
 
       console.log('📊 Database tables status:', results)
       return results
@@ -178,32 +153,35 @@ export class DatabaseService {
     }
   }
 
-  // Create or update user profile with proper RLS handling
-  static async upsertUserProfile(profile: UserProfile): Promise<boolean> {
+  // Create or update user profile
+  static async upsertUserProfile(userId: string, email: string): Promise<UserProfile | null> {
     try {
-      console.log('👤 Upserting user profile...', profile.id)
-      
-      const { error } = await supabase
+      const userData = {
+        id: userId,
+        name: email.split('@')[0],
+        email: email,
+        role: email === 'admin@gridspertise.com' ? 'admin' as const : 'regular' as const
+      }
+
+      const { data, error } = await supabase
         .from('users')
-        .upsert({
-          id: profile.id,
-          name: profile.name,
-          email: profile.email,
-          role: profile.role
-        }, {
-          onConflict: 'id'
+        .upsert(userData, { 
+          onConflict: 'id',
+          ignoreDuplicates: false 
         })
+        .select()
+        .single()
 
       if (error) {
         console.error('❌ Error upserting user profile:', error)
-        return false
+        return null
       }
 
-      console.log('✅ User profile upserted successfully')
-      return true
+      console.log('✅ User profile upserted:', data)
+      return data
     } catch (error) {
       console.error('❌ Error upserting user profile:', error)
-      return false
+      return null
     }
   }
 }
