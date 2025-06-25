@@ -27,7 +27,7 @@ export function ChatInterface({ user, aiManager, onTripSaved, onError }: ChatInt
     if (messages.length === 0) {
       setMessages([{
         type: 'ai',
-        content: '👋 Olá! Sou seu assistente para registro de viagens. \n\nDescreva sua viagem e eu vou extrair automaticamente:\n• Data da viagem\n• Destino (país e cidade)\n• Custos (passagem, hospedagem, diárias)\n• Tipo da viagem\n\nExemplo: "Preciso registrar viagem para Buenos Aires dia 20/08, gastei R$ 1.200 na passagem, R$ 800 no hotel e R$ 400 em diárias"',
+        content: '👋 Olá! Sou seu assistente para registro de viagens. \n\nDescreva sua viagem e eu vou extrair automaticamente:\n• Data da viagem\n• Destino (país e cidade)\n• Custos (passagem, hospedagem, diárias)\n• Tipo da viagem\n• Centro de custo (opcional)\n\nExemplo: "Preciso registrar viagem para Buenos Aires dia 20/08, gastei R$ 1.200 na passagem, R$ 800 no hotel e R$ 400 em diárias"',
         timestamp: new Date()
       }])
     }
@@ -73,7 +73,7 @@ export function ChatInterface({ user, aiManager, onTripSaved, onError }: ChatInt
       } else {
         const helpMessage: ChatMessage = {
           type: 'ai',
-          content: 'Não consegui identificar todos os dados da sua viagem. Por favor, informe:\n\n• Data da viagem\n• País e cidade de destino\n• Valor da passagem (R$)\n• Valor da hospedagem (R$)\n• Valor das diárias (R$)\n\nExemplo: "Viagem para São Paulo dia 15/07, passagem R$ 800, hotel R$ 300, diárias R$ 200"',
+          content: 'Não consegui identificar todos os dados da sua viagem. Por favor, informe:\n\n• Data da viagem\n• País e cidade de destino\n• Valor da passagem (R$)\n• Valor da hospedagem (R$)\n• Valor das diárias (R$)\n• Centro de custo (opcional)\n\nExemplo: "Viagem para São Paulo dia 15/07, passagem R$ 800, hotel R$ 300, diárias R$ 200, centro de custo TI"',
           timestamp: new Date()
         }
         setMessages([...newMessages, helpMessage])
@@ -98,18 +98,22 @@ export function ChatInterface({ user, aiManager, onTripSaved, onError }: ChatInt
     try {
       setLoading(true)
       
+      // Map the data to the correct database schema
+      const tripInsert = {
+        user_id: user.id,
+        travel_date: pendingTripData.trip_date,
+        destination_country: pendingTripData.destination_country,
+        destination_city: pendingTripData.destination_city,
+        cost_tickets: pendingTripData.ticket_cost,
+        cost_lodging: pendingTripData.accommodation_cost,
+        cost_daily_allowances: pendingTripData.daily_allowances,
+        cost_center: 'Não informado', // Default value
+        trip_type: pendingTripData.trip_type
+      }
+
       const { error } = await supabase
         .from('trips')
-        .insert([{
-          user_id: user.id,
-          trip_date: pendingTripData.trip_date,
-          destination_country: pendingTripData.destination_country,
-          destination_city: pendingTripData.destination_city,
-          ticket_cost: pendingTripData.ticket_cost,
-          accommodation_cost: pendingTripData.accommodation_cost,
-          daily_allowances: pendingTripData.daily_allowances,
-          trip_type: pendingTripData.trip_type
-        }])
+        .insert([tripInsert])
 
       if (error) throw error
 

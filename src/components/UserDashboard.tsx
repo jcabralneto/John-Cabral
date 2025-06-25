@@ -18,7 +18,7 @@ export function UserDashboard({ trips, setCurrentView }: UserDashboardProps) {
   }
 
   const calculateTotal = (trip: Trip) => {
-    return (trip.ticket_cost || 0) + (trip.accommodation_cost || 0) + (trip.daily_allowances || 0)
+    return (trip.cost_tickets || 0) + (trip.cost_lodging || 0) + (trip.cost_daily_allowances || 0)
   }
 
   if (trips.length === 0) {
@@ -45,26 +45,31 @@ export function UserDashboard({ trips, setCurrentView }: UserDashboardProps) {
         {trips.map((trip) => (
           <div key={trip.id} className="trip-card">
             <div className="trip-header">
-              <span className="trip-type">{trip.trip_type}</span>
+              <span className="trip-type">{trip.trip_type || 'Não classificado'}</span>
             </div>
             <div className="trip-destination">
-              📍 {trip.destination_city}, {trip.destination_country}
+              📍 {trip.destination_city || 'Cidade não informada'}, {trip.destination_country || 'País não informado'}
             </div>
             <div className="trip-date">
-              📅 {formatDate(trip.trip_date)}
+              📅 {formatDate(trip.travel_date)}
             </div>
+            {trip.cost_center && (
+              <div style={{fontSize: '0.9rem', color: '#666', marginBottom: '0.5rem'}}>
+                🏢 Centro de Custo: {trip.cost_center}
+              </div>
+            )}
             <div className="trip-costs">
               <div className="cost-item">
                 <div className="cost-label">Passagem</div>
-                <div className="cost-value">R$ {formatCurrency(trip.ticket_cost)}</div>
+                <div className="cost-value">R$ {formatCurrency(trip.cost_tickets)}</div>
               </div>
               <div className="cost-item">
                 <div className="cost-label">Hospedagem</div>
-                <div className="cost-value">R$ {formatCurrency(trip.accommodation_cost)}</div>
+                <div className="cost-value">R$ {formatCurrency(trip.cost_lodging)}</div>
               </div>
               <div className="cost-item">
                 <div className="cost-label">Diárias</div>
-                <div className="cost-value">R$ {formatCurrency(trip.daily_allowances)}</div>
+                <div className="cost-value">R$ {formatCurrency(trip.cost_daily_allowances)}</div>
               </div>
             </div>
             <div style={{

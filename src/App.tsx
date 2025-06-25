@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from './lib/supabase'
+import { DatabaseService } from './services/databaseService'
 import { AuthView } from './components/AuthView'
 import { Navbar } from './components/Navbar'
 import { UserDashboard } from './components/UserDashboard'
@@ -50,45 +51,57 @@ function App() {
 
   const fetchUserProfile = async (userId: string) => {
     try {
-      const { data, error } = await supabase
+      // Try to get from users table first
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .single()
+
+      if (!userError && userData) {
+        setUserProfile(userData)
+        setCurrentView(userData.role === 'admin' ? 'adminDashboard' : 'userDashboard')
+        fetchTrips(userData.role === 'admin', userId)
+        return
+      }
+
+      // Fallback to profiles table
+      const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .single()
 
-      if (error) throw error
-      
-      setUserProfile(data)
-      setCurrentView(data.role === 'admin' ? 'adminDashboard' : 'userDashboard')
-      fetchTrips(data.role === 'admin')
+      if (!profileError && profileData) {
+        // Convert profile to user format
+        const userProfile: UserProfile = {
+          id: profileData.id,
+          name: profileData.email?.split('@')[0] || 'User',
+          email: profileData.email,
+          role: profileData.role,
+          created_at: profileData.created_at
+        }
+        setUserProfile(userProfile)
+        setCurrentView(userProfile.role === 'admin' ? 'adminDashboard' : 'userDashboard')
+        fetchTrips(userProfile.role === 'admin', userId)
+        return
+      }
+
+      throw new Error('User profile not found')
     } catch (error) {
       console.error('Error fetching profile:', error)
       setError('Erro ao carregar perfil do usuário.')
     }
   }
 
-  const fetchTrips = async (isAdmin = false) => {
+  const fetchTrips = async (isAdmin = false, userId?: string) => {
     try {
+      const tripsData = await DatabaseService.fetchTrips(userId, isAdmin)
+      
       if (isAdmin) {
-        const { data, error } = await supabase
-          .from('trips')
-          .select(`
-            *,
-            profiles:user_id (email)
-          `)
-          .order('created_at', { ascending: false })
-        
-        if (error) throw error
-        setAllTrips(data || [])
+        setAllTrips(tripsData)
       } else {
-        const { data, error } = await supabase
-          .from('trips')
-          .select('*')
-          .eq('user_id', user?.id)
-          .order('created_at', { ascending: false })
-        
-        if (error) throw error
-        setTrips(data || [])
+        setTrips(tripsData)
       }
     } catch (error) {
       console.error('Error fetching trips:', error)
@@ -159,7 +172,7 @@ function App() {
             aiManager={aiManager}
             onTripSaved={() => {
               setSuccess('Viagem registrada com sucesso!')
-              fetchTrips(userProfile?.role === 'admin')
+              fetchTrips(userProfile?.role === 'admin', user.id)
             }}
             onError={setError}
           />
