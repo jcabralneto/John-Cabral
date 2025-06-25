@@ -742,21 +742,23 @@ export default function App() {
   };
 
   const handleTripSavedByChat = () => {
-    setSuccess('Viagem registrada com sucesso!');
-    if (user && userProfile) {
-      fetch
-// ... (mantenha os imports e utilitários acima)
+  setSuccess('Viagem registrada com sucesso!');
+  if (user && userProfile) {
+    fetchTrips(userProfile.role === 'admin', user.id); // não esqueça de fechar os parênteses!
+  }
+}; // <--- NÃO ESQUEÇA ESSE PONTO E VÍRGULA E FECHAMENTO
+
 
 function ChatInterface({ user, onTripSaved, onError }) {
-  // ... (código igual ao enviado anteriormente na parte 3)
-  // [Cole exatamente o código da ChatInterface enviado na última resposta]
+  // ... código do chat ...
 }
+
 
 // =====================
 // APP PRINCIPAL
 // =====================
 
 export default function App() {
-  // ... (toda lógica da função App, igual à última resposta)
-  // [Cole exatamente o código da função App enviado na última resposta]
+  // ... código principal do seu app ...
 }
+
