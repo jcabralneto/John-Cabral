@@ -180,7 +180,7 @@ export function AdminDashboard({ allTrips }: AdminDashboardProps) {
                 </div>
               </div>
               <div style={{
-                textAlign: 'center, 
+                textAlign: 'center',
                 marginTop: '1rem', 
                 padding: '0.5rem', 
                 background: '#f8f9fa', 
