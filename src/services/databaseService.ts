@@ -2,14 +2,14 @@ import { supabase } from '../lib/supabase'
 import type { UserProfile, Trip, Budget } from '../types'
 
 export class DatabaseService {
-  // Fetch users from the correct table
+  // Fetch users from the correct table with proper RLS handling
   static async fetchUsers(): Promise<UserProfile[]> {
     try {
       console.log('📊 Buscando usuários...')
       
       const { data: usersData, error: usersError } = await supabase
         .from('users')
-        .select('*')
+        .select('id, name, email, role')
         .order('name')
 
       if (!usersError && usersData) {
@@ -175,6 +175,35 @@ export class DatabaseService {
     } catch (error) {
       console.error('❌ Error checking database tables:', error)
       return results
+    }
+  }
+
+  // Create or update user profile with proper RLS handling
+  static async upsertUserProfile(profile: UserProfile): Promise<boolean> {
+    try {
+      console.log('👤 Upserting user profile...', profile.id)
+      
+      const { error } = await supabase
+        .from('users')
+        .upsert({
+          id: profile.id,
+          name: profile.name,
+          email: profile.email,
+          role: profile.role
+        }, {
+          onConflict: 'id'
+        })
+
+      if (error) {
+        console.error('❌ Error upserting user profile:', error)
+        return false
+      }
+
+      console.log('✅ User profile upserted successfully')
+      return true
+    } catch (error) {
+      console.error('❌ Error upserting user profile:', error)
+      return false
     }
   }
 }

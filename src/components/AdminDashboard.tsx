@@ -19,20 +19,25 @@ export function AdminDashboard({ allTrips }: AdminDashboardProps) {
     try {
       console.log('👥 Carregando usuários...')
       
+      // Only admin users can access all users data
+      // The RLS policy should handle this, but we're being explicit
       const { data, error } = await supabase
         .from('users')
-        .select('*')
+        .select('id, name, email, role')
         .order('name')
         .limit(100)
 
       if (error) {
         console.warn('⚠️ Erro ao carregar usuários:', error)
+        // If we can't load users due to permissions, just show empty list
+        setUsers([])
       } else {
         setUsers(data || [])
         console.log('✅ Usuários carregados:', data?.length || 0)
       }
     } catch (error) {
       console.warn('⚠️ Erro ao carregar usuários:', error)
+      setUsers([])
     } finally {
       setLoading(false)
     }
@@ -132,7 +137,7 @@ export function AdminDashboard({ allTrips }: AdminDashboardProps) {
         </div>
       ) : (
         <div style={{ textAlign: 'center', padding: '2rem', color: '#666' }}>
-          Nenhum usuário encontrado.
+          {loading ? 'Carregando usuários...' : 'Nenhum usuário encontrado ou sem permissão para visualizar.'}
         </div>
       )}
 
@@ -175,7 +180,7 @@ export function AdminDashboard({ allTrips }: AdminDashboardProps) {
                 </div>
               </div>
               <div style={{
-                textAlign: 'center', 
+                textAlign: 'center, 
                 marginTop: '1rem', 
                 padding: '0.5rem', 
                 background: '#f8f9fa', 
