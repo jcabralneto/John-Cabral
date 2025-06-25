@@ -1,23 +1,32 @@
-{
-  "compilerOptions": {
-    "target": "ESNext",
-    "module": "ESNext",
-    "lib": ["DOM", "DOM.Iterable", "ESNext"],
-    "allowJs": false,
-    "strict": true,
-    "moduleResolution": "Node",
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "jsx": "react-jsx",
-    "baseUrl": "./",
-    "paths": {
-      "@/*": ["src/*"]
-    },
-    "typeRoots": ["./node_modules/@types"],
-    "types": ["vite/client", "vitest"],
-    "outDir": "dist"
-  },
-  "include": ["src"],
-  "exclude": ["node_modules", "dist"]
-}
+ (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
+diff --git a//dev/null b/tsconfig.json
+index 0000000000000000000000000000000000000000..be453f6d3f0884f736e0d26b61130a550774698f 100644
+--- a//dev/null
++++ b/tsconfig.json
+@@ -0,0 +1,23 @@
++{
++  "compilerOptions": {
++    "target": "ESNext",
++    "module": "ESNext",
++    "lib": ["DOM", "DOM.Iterable", "ESNext"],
++    "allowJs": false,
++    "strict": true,
++    "moduleResolution": "Node",
++    "esModuleInterop": true,
++    "skipLibCheck": true,
++    "forceConsistentCasingInFileNames": true,
++    "jsx": "react-jsx",
++    "baseUrl": "./",
++    "paths": {
++      "@/*": ["src/*"]
++    },
++    "typeRoots": ["./node_modules/@types"],
++    "types": ["vite/client", "vitest"],
++    "outDir": "dist"
++  },
++  "include": ["src"],
++  "exclude": ["node_modules", "dist"]
++}
+ 
+EOF
+)
