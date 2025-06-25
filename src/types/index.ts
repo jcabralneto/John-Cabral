@@ -17,6 +17,7 @@ export interface Trip {
   cost_daily_allowances: number | null
   cost_center: string | null
   trip_type: string | null
+  trip_reason: string | null
   created_at: string | null
   users?: {
     name: string
@@ -42,6 +43,7 @@ export interface TripData {
   accommodation_cost: number | null
   daily_allowances: number | null
   trip_type: string | null
+  trip_reason: string | null
 }
 
 export interface ChatMessage {

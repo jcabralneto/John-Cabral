@@ -53,6 +53,11 @@ export function UserDashboard({ trips, setCurrentView }: UserDashboardProps) {
             <div className="trip-date">
               📅 {formatDate(trip.travel_date)}
             </div>
+            {trip.trip_reason && (
+              <div style={{fontSize: '0.9rem', color: '#666', marginBottom: '0.5rem'}}>
+                🎯 Motivo: {trip.trip_reason}
+              </div>
+            )}
             {trip.cost_center && (
               <div style={{fontSize: '0.9rem', color: '#666', marginBottom: '0.5rem'}}>
                 🏢 Centro de Custo: {trip.cost_center}

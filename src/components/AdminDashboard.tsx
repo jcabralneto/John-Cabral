@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
-import { supabase } from '../lib/supabase'
+import { DatabaseService } from '../services/databaseService'
 import { LoadingSpinner } from './LoadingSpinner'
-import type { Trip, UserProfile } from '../types'
+import type { Trip, Budget, UserProfile } from '../types'
 
 interface AdminDashboardProps {
   allTrips: Trip[]
@@ -9,35 +9,45 @@ interface AdminDashboardProps {
 
 export function AdminDashboard({ allTrips }: AdminDashboardProps) {
   const [users, setUsers] = useState<UserProfile[]>([])
+  const [budgets, setBudgets] = useState<Budget[]>([])
+  const [budgetSummary, setBudgetSummary] = useState({
+    totalBudget: 0,
+    budgetByType: {} as Record<string, number>,
+    budgetByYear: {} as Record<number, number>
+  })
   const [loading, setLoading] = useState(true)
+  const [databaseStatus, setDatabaseStatus] = useState({
+    users: false,
+    trips: false,
+    budgets: false,
+    legacy: false
+  })
 
   useEffect(() => {
-    loadUsers()
+    loadAdminData()
   }, [])
 
-  const loadUsers = async () => {
+  const loadAdminData = async () => {
+    setLoading(true)
     try {
-      console.log('👥 Carregando usuários...')
-      
-      // Only admin users can access all users data
-      // The RLS policy should handle this, but we're being explicit
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, name, email, role')
-        .order('name')
-        .limit(100)
+      // Check database status
+      const status = await DatabaseService.checkDatabaseTables()
+      setDatabaseStatus(status)
 
-      if (error) {
-        console.warn('⚠️ Erro ao carregar usuários:', error)
-        // If we can't load users due to permissions, just show empty list
-        setUsers([])
-      } else {
-        setUsers(data || [])
-        console.log('✅ Usuários carregados:', data?.length || 0)
-      }
+      // Load users
+      const usersData = await DatabaseService.fetchUsers()
+      setUsers(usersData)
+
+      // Load budgets
+      const budgetsData = await DatabaseService.fetchBudgets()
+      setBudgets(budgetsData)
+
+      // Load budget summary
+      const summary = await DatabaseService.getBudgetSummary()
+      setBudgetSummary(summary)
+
     } catch (error) {
-      console.warn('⚠️ Erro ao carregar usuários:', error)
-      setUsers([])
+      console.error('Error loading admin data:', error)
     } finally {
       setLoading(false)
     }
@@ -70,10 +80,55 @@ export function AdminDashboard({ allTrips }: AdminDashboardProps) {
 
   const { totalTrips, totalCost, avgCostPerTrip } = calculateKPIs()
 
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem' }}>
+        <LoadingSpinner text="Carregando dados administrativos..." />
+      </div>
+    )
+  }
+
   return (
     <div>
       <h2>Dashboard Administrativo</h2>
       
+      {/* Database Status */}
+      <div style={{ 
+        background: '#f8f9fa', 
+        padding: '1rem', 
+        borderRadius: '8px', 
+        marginBottom: '2rem',
+        border: '1px solid #e1e5e9'
+      }}>
+        <h4 style={{ marginBottom: '1rem', color: '#003366' }}>Status do Banco de Dados</h4>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem' }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: '1.5rem' }}>
+              {databaseStatus.users ? '✅' : '❌'}
+            </div>
+            <div>Usuários</div>
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: '1.5rem' }}>
+              {databaseStatus.trips ? '✅' : '❌'}
+            </div>
+            <div>Viagens</div>
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: '1.5rem' }}>
+              {databaseStatus.budgets ? '✅' : '❌'}
+            </div>
+            <div>Orçamentos</div>
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: '1.5rem' }}>
+              {databaseStatus.legacy ? '✅' : '❌'}
+            </div>
+            <div>Tabelas Legacy</div>
+          </div>
+        </div>
+      </div>
+
       {/* KPIs */}
       <div className="kpi-grid">
         <div className="kpi-card">
@@ -94,12 +149,40 @@ export function AdminDashboard({ allTrips }: AdminDashboardProps) {
         </div>
       </div>
 
-      {/* Users List */}
-      {loading ? (
-        <div style={{ textAlign: 'center', padding: '2rem' }}>
-          <LoadingSpinner text="Carregando usuários..." />
+      {/* Budget Summary */}
+      {budgets.length > 0 && (
+        <div style={{ marginBottom: '2rem' }}>
+          <h3>Resumo de Orçamentos</h3>
+          <div className="kpi-grid">
+            <div className="kpi-card">
+              <div className="kpi-value">R$ {formatCurrency(budgetSummary.totalBudget)}</div>
+              <div className="kpi-label">Orçamento Total</div>
+            </div>
+            <div className="kpi-card">
+              <div className="kpi-value">{budgets.length}</div>
+              <div className="kpi-label">Orçamentos Definidos</div>
+            </div>
+          </div>
+
+          {/* Budget by Type */}
+          {Object.keys(budgetSummary.budgetByType).length > 0 && (
+            <div style={{ marginTop: '1rem' }}>
+              <h4>Orçamento por Tipo de Viagem</h4>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                {Object.entries(budgetSummary.budgetByType).map(([type, amount]) => (
+                  <div key={type} className="kpi-card">
+                    <div className="kpi-value">R$ {formatCurrency(amount)}</div>
+                    <div className="kpi-label">{type}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
-      ) : users.length > 0 ? (
+      )}
+
+      {/* Users List */}
+      {users.length > 0 && (
         <div style={{ marginBottom: '2rem' }}>
           <h3>Usuários Cadastrados ({users.length})</h3>
           <div style={{ 
@@ -135,10 +218,6 @@ export function AdminDashboard({ allTrips }: AdminDashboardProps) {
             ))}
           </div>
         </div>
-      ) : (
-        <div style={{ textAlign: 'center', padding: '2rem', color: '#666' }}>
-          {loading ? 'Carregando usuários...' : 'Nenhum usuário encontrado ou sem permissão para visualizar.'}
-        </div>
       )}
 
       {/* Trips */}
@@ -154,12 +233,20 @@ export function AdminDashboard({ allTrips }: AdminDashboardProps) {
               <div className="trip-header">
                 <span className="trip-type">{trip.trip_type || 'Não classificado'}</span>
               </div>
+              <div style={{fontSize: '0.9rem', color: '#666', marginBottom: '0.5rem'}}>
+                👤 {trip.users?.name || trip.users?.email || 'Usuário não encontrado'}
+              </div>
               <div className="trip-destination">
                 📍 {trip.destination_city || 'Cidade não informada'}, {trip.destination_country || 'País não informado'}
               </div>
               <div className="trip-date">
                 📅 {formatDate(trip.travel_date)}
               </div>
+              {trip.trip_reason && (
+                <div style={{fontSize: '0.9rem', color: '#666', marginBottom: '0.5rem'}}>
+                  🎯 Motivo: {trip.trip_reason}
+                </div>
+              )}
               {trip.cost_center && (
                 <div style={{fontSize: '0.9rem', color: '#666', marginBottom: '0.5rem'}}>
                   🏢 Centro de Custo: {trip.cost_center}
@@ -180,7 +267,7 @@ export function AdminDashboard({ allTrips }: AdminDashboardProps) {
                 </div>
               </div>
               <div style={{
-                textAlign: 'center',
+                textAlign: 'center', 
                 marginTop: '1rem', 
                 padding: '0.5rem', 
                 background: '#f8f9fa', 

@@ -10,7 +10,18 @@ interface ChatInterfaceProps {
   onError: (error: string) => void
 }
 
-type ChatStep = 'initial' | 'date' | 'country' | 'city' | 'tickets' | 'lodging' | 'allowances' | 'cost_center' | 'confirmation'
+type ChatStep = 'initial' | 'date' | 'country' | 'city' | 'tickets' | 'lodging' | 'allowances' | 'reason' | 'cost_center' | 'confirmation'
+
+const TRIP_REASONS = [
+  'JOBI-M',
+  'LVM', 
+  'SERVIÇOS',
+  'INDIRETO',
+  'CHILE',
+  'COLOMBIA',
+  'SALES',
+  'OUTROS'
+]
 
 export function ChatInterface({ user, onTripSaved, onError }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -23,7 +34,8 @@ export function ChatInterface({ user, onTripSaved, onError }: ChatInterfaceProps
     ticket_cost: null,
     accommodation_cost: null,
     daily_allowances: null,
-    trip_type: null
+    trip_type: null,
+    trip_reason: null
   })
   const [costCenter, setCostCenter] = useState<string>('')
   const [loading, setLoading] = useState(false)
@@ -83,6 +95,33 @@ export function ChatInterface({ user, onTripSaved, onError }: ChatInterfaceProps
     const cleanValue = value.replace(/[R$\s]/g, '').replace(',', '.')
     const numValue = parseFloat(cleanValue)
     return isNaN(numValue) ? null : numValue
+  }
+
+  const validateTripReason = (reason: string): string | null => {
+    const upperReason = reason.toUpperCase().trim()
+    
+    // Check if it's one of the valid reasons
+    if (TRIP_REASONS.includes(upperReason)) {
+      return upperReason
+    }
+    
+    // Check for partial matches or common variations
+    const reasonMap: Record<string, string> = {
+      'JOBI': 'JOBI-M',
+      'JOBIM': 'JOBI-M',
+      'SERVICOS': 'SERVIÇOS',
+      'SERVICO': 'SERVIÇOS',
+      'SERVICE': 'SERVIÇOS',
+      'SERVICES': 'SERVIÇOS',
+      'OUTRO': 'OUTROS',
+      'OTHER': 'OUTROS'
+    }
+    
+    if (reasonMap[upperReason]) {
+      return reasonMap[upperReason]
+    }
+    
+    return null
   }
 
   const classifyTripType = (country: string): string => {
@@ -185,10 +224,21 @@ export function ChatInterface({ user, onTripSaved, onError }: ChatInterfaceProps
         const allowancesCost = validateCurrency(userInput)
         if (allowancesCost !== null) {
           setTripData(prev => ({ ...prev, daily_allowances: allowancesCost }))
-          aiResponse = `✅ Valor das diárias: R$ ${allowancesCost.toFixed(2)}\n\n🏢 **Centro de custo (opcional):**\n\nSe não tiver, digite "não" ou "pular"`
-          nextStep = 'cost_center'
+          aiResponse = `✅ Valor das diárias: R$ ${allowancesCost.toFixed(2)}\n\n🎯 **Qual é o motivo da viagem?**\n\nOpções disponíveis:\n• JOBI-M\n• LVM\n• SERVIÇOS\n• INDIRETO\n• CHILE\n• COLOMBIA\n• SALES\n• OUTROS\n\nDigite uma das opções acima:`
+          nextStep = 'reason'
         } else {
           aiResponse = '❌ Valor inválido. Use apenas números.\n\n💰 **Qual foi o valor das diárias/alimentação?**\nExemplo: R$ 450 ou 450,00'
+        }
+        break
+
+      case 'reason':
+        const validReason = validateTripReason(userInput)
+        if (validReason) {
+          setTripData(prev => ({ ...prev, trip_reason: validReason }))
+          aiResponse = `✅ Motivo registrado: ${validReason}\n\n🏢 **Centro de custo (opcional):**\n\nSe não tiver, digite "não" ou "pular"`
+          nextStep = 'cost_center'
+        } else {
+          aiResponse = `❌ Motivo inválido. Por favor, escolha uma das opções:\n\n• JOBI-M\n• LVM\n• SERVIÇOS\n• INDIRETO\n• CHILE\n• COLOMBIA\n• SALES\n• OUTROS\n\n🎯 **Qual é o motivo da viagem?**`
         }
         break
 
@@ -237,7 +287,8 @@ export function ChatInterface({ user, onTripSaved, onError }: ChatInterfaceProps
         cost_lodging: tripData.accommodation_cost,
         cost_daily_allowances: tripData.daily_allowances,
         cost_center: costCenter || 'Não informado',
-        trip_type: tripData.trip_type
+        trip_type: tripData.trip_type,
+        trip_reason: tripData.trip_reason
       }
 
       const { error } = await supabase
@@ -261,7 +312,8 @@ export function ChatInterface({ user, onTripSaved, onError }: ChatInterfaceProps
         ticket_cost: null,
         accommodation_cost: null,
         daily_allowances: null,
-        trip_type: null
+        trip_type: null,
+        trip_reason: null
       })
       setCostCenter('')
       setCurrentStep('initial')
@@ -284,7 +336,8 @@ export function ChatInterface({ user, onTripSaved, onError }: ChatInterfaceProps
       ticket_cost: null,
       accommodation_cost: null,
       daily_allowances: null,
-      trip_type: null
+      trip_type: null,
+      trip_reason: null
     })
     setCostCenter('')
     
@@ -332,8 +385,9 @@ export function ChatInterface({ user, onTripSaved, onError }: ChatInterfaceProps
                       <p><strong>✈️ Passagem:</strong> R$ {formatCurrency(message.data.ticket_cost)}</p>
                       <p><strong>🏨 Hospedagem:</strong> R$ {formatCurrency(message.data.accommodation_cost)}</p>
                       <p><strong>💰 Diárias:</strong> R$ {formatCurrency(message.data.daily_allowances)}</p>
+                      <p><strong>🎯 Motivo:</strong> {message.data.trip_reason}</p>
                       <p><strong>🏢 Centro de Custo:</strong> {costCenter || 'Não informado'}</p>
-                      <p><strong>🎯 Tipo:</strong> {message.data.trip_type}</p>
+                      <p><strong>📊 Tipo:</strong> {message.data.trip_type}</p>
                       <p><strong>💵 Total:</strong> R$ {formatCurrency(
                         (message.data.ticket_cost || 0) + 
                         (message.data.accommodation_cost || 0) + 
@@ -390,6 +444,7 @@ export function ChatInterface({ user, onTripSaved, onError }: ChatInterfaceProps
               currentStep === 'tickets' ? 'Ex: R$ 1200' :
               currentStep === 'lodging' ? 'Ex: R$ 800' :
               currentStep === 'allowances' ? 'Ex: R$ 450' :
+              currentStep === 'reason' ? 'Ex: JOBI-M' :
               currentStep === 'cost_center' ? 'Ex: TI ou "não"' :
               'Digite sua resposta...'
             }
