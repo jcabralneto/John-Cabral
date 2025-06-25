@@ -73,7 +73,7 @@ function App() {
     try {
       console.log('👤 Buscando perfil do usuário:', userId)
       
-      // Try to get from users table first
+      // Get user profile from users table
       const { data: userData, error: userError } = await supabase
         .from('users')
         .select('*')
@@ -81,14 +81,14 @@ function App() {
         .single()
 
       if (!userError && userData) {
-        console.log('✅ Perfil encontrado na tabela users:', userData)
+        console.log('✅ Perfil encontrado:', userData)
         setUserProfile(userData)
         setCurrentView(userData.role === 'admin' ? 'adminDashboard' : 'userDashboard')
         await fetchTrips(userData.role === 'admin', userId)
         return
       }
 
-      console.log('⚠️ Usuário não encontrado na tabela users, tentando criar...')
+      console.log('⚠️ Usuário não encontrado, tentando criar...')
       
       // Create user if not exists
       const newUser: UserProfile = {
@@ -114,9 +114,9 @@ function App() {
       setCurrentView(createdUser.role === 'admin' ? 'adminDashboard' : 'userDashboard')
       await fetchTrips(createdUser.role === 'admin', userId)
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Erro ao buscar/criar perfil:', error)
-      setError('Erro ao carregar perfil do usuário.')
+      setError(`Erro ao carregar perfil: ${error.message}`)
     }
   }
 
@@ -132,9 +132,9 @@ function App() {
         setTrips(tripsData)
         console.log('✅ Viagens usuário carregadas:', tripsData.length)
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Erro ao carregar viagens:', error)
-      setError('Erro ao carregar viagens.')
+      setError(`Erro ao carregar viagens: ${error.message}`)
     }
   }
 

@@ -18,6 +18,14 @@ export function AuthView({ error, success, setError, setSuccess }: AuthViewProps
     e.preventDefault()
     setLoading(true)
     setError('')
+    setSuccess('')
+
+    // Validate password length for signup
+    if (authMode === 'signup' && password.length < 6) {
+      setError('A senha deve ter pelo menos 6 caracteres.')
+      setLoading(false)
+      return
+    }
 
     try {
       if (authMode === 'login') {
@@ -25,16 +33,32 @@ export function AuthView({ error, success, setError, setSuccess }: AuthViewProps
           email,
           password,
         })
-        if (error) throw error
+        if (error) {
+          if (error.message.includes('Invalid login credentials')) {
+            throw new Error('Email ou senha incorretos. Verifique suas credenciais.')
+          }
+          throw error
+        }
       } else {
         const { error } = await supabase.auth.signUp({
           email,
           password,
         })
-        if (error) throw error
-        setSuccess('Conta criada! Verifique seu email.')
+        if (error) {
+          if (error.message.includes('Password should be at least 6 characters')) {
+            throw new Error('A senha deve ter pelo menos 6 caracteres.')
+          }
+          if (error.message.includes('User already registered')) {
+            throw new Error('Este email já está cadastrado. Tente fazer login.')
+          }
+          throw error
+        }
+        setSuccess('Conta criada com sucesso! Você já pode fazer login.')
+        setAuthMode('login')
+        setPassword('')
       }
     } catch (error: any) {
+      console.error('Auth error:', error)
       setError(error.message)
     } finally {
       setLoading(false)
@@ -58,6 +82,7 @@ export function AuthView({ error, success, setError, setSuccess }: AuthViewProps
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
+            placeholder="seu@email.com"
           />
         </div>
         
@@ -68,7 +93,14 @@ export function AuthView({ error, success, setError, setSuccess }: AuthViewProps
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
+            minLength={6}
+            placeholder="Mínimo 6 caracteres"
           />
+          {authMode === 'signup' && (
+            <small style={{color: '#666', fontSize: '0.8rem'}}>
+              A senha deve ter pelo menos 6 caracteres
+            </small>
+          )}
         </div>
 
         <button 
@@ -87,7 +119,12 @@ export function AuthView({ error, success, setError, setSuccess }: AuthViewProps
             Não tem conta? 
             <a 
               href="#" 
-              onClick={() => setAuthMode('signup')} 
+              onClick={(e) => {
+                e.preventDefault()
+                setAuthMode('signup')
+                setError('')
+                setSuccess('')
+              }} 
               style={{color: '#00A79D', marginLeft: '0.5rem'}}
             >
               Criar conta
@@ -98,7 +135,12 @@ export function AuthView({ error, success, setError, setSuccess }: AuthViewProps
             Já tem conta? 
             <a 
               href="#" 
-              onClick={() => setAuthMode('login')} 
+              onClick={(e) => {
+                e.preventDefault()
+                setAuthMode('login')
+                setError('')
+                setSuccess('')
+              }} 
               style={{color: '#00A79D', marginLeft: '0.5rem'}}
             >
               Fazer login
