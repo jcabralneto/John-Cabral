@@ -126,6 +126,19 @@ npm run dev
 npm test
 ```
 
+### 6. TypeScript Build
+
+The source code in `src/` is written entirely in TypeScript. A `tsconfig.json`
+and `vite-env.d.ts` are provided so the project can be compiled with `tsc`
+before the Vite build process. To compile the TypeScript sources run:
+
+```bash
+npm run build
+```
+
+When migrating new JavaScript files, tools such as **ts-morph** or
+**ts-migrate** can help automate the conversion.
+
 ## Usage
 
 ### Admin Access
