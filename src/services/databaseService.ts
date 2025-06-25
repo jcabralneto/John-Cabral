@@ -2,6 +2,67 @@ import { supabase } from '../lib/supabase'
 import type { UserProfile, Trip, Budget } from '../types'
 
 export class DatabaseService {
+  // Get or create user profile with proper error handling
+  static async getOrCreateUserProfile(userId: string, email: string): Promise<UserProfile | null> {
+    try {
+      console.log('🔄 Getting/creating profile for:', email)
+
+      // First, try to get existing profile
+      const { data: existingProfile, error: fetchError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .single()
+
+      if (existingProfile && !fetchError) {
+        console.log('✅ Existing profile found')
+        return existingProfile
+      }
+
+      console.log('ℹ️ Profile not found, creating new one...')
+
+      // Create new profile
+      const newProfileData = {
+        id: userId,
+        name: email.split('@')[0],
+        email: email,
+        role: email === 'admin@gridspertise.com' ? 'admin' as const : 'regular' as const
+      }
+
+      const { data: newProfile, error: insertError } = await supabase
+        .from('users')
+        .insert([newProfileData])
+        .select()
+        .single()
+
+      if (insertError) {
+        console.error('❌ Error creating profile:', insertError)
+        
+        // Try upsert as fallback
+        const { data: upsertProfile, error: upsertError } = await supabase
+          .from('users')
+          .upsert(newProfileData, { onConflict: 'id' })
+          .select()
+          .single()
+
+        if (upsertError) {
+          console.error('❌ Error upserting profile:', upsertError)
+          return null
+        }
+
+        console.log('✅ Profile upserted successfully')
+        return upsertProfile
+      }
+
+      console.log('✅ Profile created successfully')
+      return newProfile
+
+    } catch (error) {
+      console.error('❌ Error in getOrCreateUserProfile:', error)
+      return null
+    }
+  }
+
   // Fetch users from the correct table
   static async fetchUsers(): Promise<UserProfile[]> {
     try {
@@ -23,9 +84,11 @@ export class DatabaseService {
     }
   }
 
-  // Fetch trips with proper error handling
+  // Fetch trips with proper error handling and timeout
   static async fetchTrips(userId?: string, isAdmin = false): Promise<Trip[]> {
     try {
+      console.log('🔄 Fetching trips for user:', userId, 'isAdmin:', isAdmin)
+
       let query = supabase.from('trips').select(`
         *,
         users:user_id (name, email)
@@ -35,7 +98,13 @@ export class DatabaseService {
         query = query.eq('user_id', userId)
       }
 
-      const { data, error } = await query.order('created_at', { ascending: false })
+      // Add timeout to prevent hanging
+      const queryPromise = query.order('created_at', { ascending: false })
+      const timeoutPromise = new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('Trips query timeout')), 8000)
+      )
+
+      const { data, error } = await Promise.race([queryPromise, timeoutPromise])
 
       if (error) {
         console.error('❌ Error fetching trips:', error)
@@ -50,14 +119,20 @@ export class DatabaseService {
     }
   }
 
-  // Fetch budgets
+  // Fetch budgets with timeout
   static async fetchBudgets(): Promise<Budget[]> {
     try {
-      const { data, error } = await supabase
+      const queryPromise = supabase
         .from('budgets')
         .select('*')
         .order('year', { ascending: false })
         .order('month', { ascending: false })
+
+      const timeoutPromise = new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('Budgets query timeout')), 5000)
+      )
+
+      const { data, error } = await Promise.race([queryPromise, timeoutPromise])
 
       if (error) {
         console.error('❌ Error fetching budgets:', error)
@@ -102,7 +177,7 @@ export class DatabaseService {
     }
   }
 
-  // Check database tables availability
+  // Check database tables availability with timeout
   static async checkDatabaseTables(): Promise<{
     users: boolean
     trips: boolean
@@ -117,71 +192,52 @@ export class DatabaseService {
     }
 
     try {
+      // Create timeout for each check
+      const createTimeoutPromise = (ms: number) => new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('Database check timeout')), ms)
+      )
+
       // Check users table
-      const { error: usersError } = await supabase
-        .from('users')
-        .select('id')
-        .limit(1)
-      results.users = !usersError
+      try {
+        const usersPromise = supabase.from('users').select('id').limit(1)
+        await Promise.race([usersPromise, createTimeoutPromise(3000)])
+        results.users = true
+      } catch (error) {
+        console.warn('Users table check failed:', error)
+      }
 
       // Check trips table
-      const { error: tripsError } = await supabase
-        .from('trips')
-        .select('id')
-        .limit(1)
-      results.trips = !tripsError
+      try {
+        const tripsPromise = supabase.from('trips').select('id').limit(1)
+        await Promise.race([tripsPromise, createTimeoutPromise(3000)])
+        results.trips = true
+      } catch (error) {
+        console.warn('Trips table check failed:', error)
+      }
 
       // Check budgets table
-      const { error: budgetsError } = await supabase
-        .from('budgets')
-        .select('id')
-        .limit(1)
-      results.budgets = !budgetsError
+      try {
+        const budgetsPromise = supabase.from('budgets').select('id').limit(1)
+        await Promise.race([budgetsPromise, createTimeoutPromise(3000)])
+        results.budgets = true
+      } catch (error) {
+        console.warn('Budgets table check failed:', error)
+      }
 
       // Check legacy tables (paises table as indicator)
-      const { error: legacyError } = await supabase
-        .from('paises')
-        .select('id')
-        .limit(1)
-      results.legacy = !legacyError
+      try {
+        const legacyPromise = supabase.from('paises').select('id').limit(1)
+        await Promise.race([legacyPromise, createTimeoutPromise(3000)])
+        results.legacy = true
+      } catch (error) {
+        console.warn('Legacy tables check failed:', error)
+      }
 
       console.log('📊 Database tables status:', results)
       return results
     } catch (error) {
       console.error('❌ Error checking database tables:', error)
       return results
-    }
-  }
-
-  // Create or update user profile
-  static async upsertUserProfile(userId: string, email: string): Promise<UserProfile | null> {
-    try {
-      const userData = {
-        id: userId,
-        name: email.split('@')[0],
-        email: email,
-        role: email === 'admin@gridspertise.com' ? 'admin' as const : 'regular' as const
-      }
-
-      const { data, error } = await supabase
-        .from('users')
-        .upsert(userData, { 
-          onConflict: 'id',
-          ignoreDuplicates: false 
-        })
-        .select()
-        .single()
-
-      if (error) {
-        console.error('❌ Error upserting user profile:', error)
-        return null
-      }
-
-      console.log('✅ User profile upserted:', data)
-      return data
-    } catch (error) {
-      console.error('❌ Error upserting user profile:', error)
-      return null
     }
   }
 }

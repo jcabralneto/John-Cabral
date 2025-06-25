@@ -25,66 +25,113 @@ function App() {
 
   // Check for logged in user
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        setUser(session.user)
-        handleUserLogin(session.user)
+    let mounted = true
+
+    const initializeAuth = async () => {
+      try {
+        console.log('🔄 Initializing auth...')
+        
+        const { data: { session }, error } = await supabase.auth.getSession()
+        
+        if (error) {
+          console.error('❌ Session error:', error)
+          if (mounted) {
+            setError('Erro ao verificar sessão. Tente fazer login novamente.')
+            setLoading(false)
+          }
+          return
+        }
+
+        if (session?.user && mounted) {
+          console.log('✅ Session found, loading user...')
+          await handleUserLogin(session.user)
+        } else {
+          console.log('ℹ️ No session found')
+          if (mounted) {
+            setLoading(false)
+          }
+        }
+      } catch (error) {
+        console.error('❌ Auth initialization error:', error)
+        if (mounted) {
+          setError('Erro ao inicializar autenticação.')
+          setLoading(false)
+        }
       }
-      setLoading(false)
-    })
+    }
+
+    initializeAuth()
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session) {
-        setUser(session.user)
+      console.log('🔄 Auth state changed:', event)
+      
+      if (!mounted) return
+
+      if (event === 'SIGNED_IN' && session?.user) {
         await handleUserLogin(session.user)
-      } else {
+      } else if (event === 'SIGNED_OUT') {
         setUser(null)
         setUserProfile(null)
         setCurrentView('auth')
         setTrips([])
         setAllTrips([])
+        setError('')
+        setSuccess('')
+        setLoading(false)
       }
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
   }, [])
 
-  const handleUserLogin = async (user: User) => {
+  const handleUserLogin = async (authUser: User) => {
     try {
+      console.log('🔄 Handling user login for:', authUser.email)
       setLoading(true)
-      
-      // First, try to get existing profile
-      const { data: existingProfile, error: fetchError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', user.id)
-        .single()
+      setError('')
 
-      let profile: UserProfile
+      // Set user immediately
+      setUser(authUser)
 
-      if (fetchError || !existingProfile) {
-        // Profile doesn't exist, create it
-        console.log('Creating new user profile...')
-        const newProfile = await DatabaseService.upsertUserProfile(user.id, user.email || '')
-        
-        if (!newProfile) {
-          throw new Error('Failed to create user profile')
-        }
-        
-        profile = newProfile
-      } else {
-        profile = existingProfile
+      // Try to get or create user profile with timeout
+      const profilePromise = DatabaseService.getOrCreateUserProfile(authUser.id, authUser.email || '')
+      const timeoutPromise = new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('Profile loading timeout')), 10000)
+      )
+
+      const profile = await Promise.race([profilePromise, timeoutPromise])
+
+      if (!profile) {
+        throw new Error('Failed to load user profile')
       }
 
+      console.log('✅ Profile loaded:', profile)
       setUserProfile(profile)
       setCurrentView(profile.role === 'admin' ? 'adminDashboard' : 'userDashboard')
       
-      // Load trips
-      await fetchTrips(profile.role === 'admin', user.id)
+      // Load trips in background
+      fetchTrips(profile.role === 'admin', authUser.id).catch(error => {
+        console.error('❌ Error loading trips:', error)
+        // Don't show error for trips loading failure
+      })
       
-    } catch (error) {
-      console.error('Error handling user login:', error)
-      setError('Erro ao carregar perfil do usuário. Tente fazer login novamente.')
+    } catch (error: any) {
+      console.error('❌ Error handling user login:', error)
+      
+      // If profile creation fails, still allow user to continue with basic profile
+      const basicProfile: UserProfile = {
+        id: authUser.id,
+        name: authUser.email?.split('@')[0] || 'User',
+        email: authUser.email,
+        role: authUser.email === 'admin@gridspertise.com' ? 'admin' : 'regular'
+      }
+      
+      setUserProfile(basicProfile)
+      setCurrentView(basicProfile.role === 'admin' ? 'adminDashboard' : 'userDashboard')
+      setError('Perfil carregado com dados básicos. Algumas funcionalidades podem estar limitadas.')
     } finally {
       setLoading(false)
     }
@@ -92,6 +139,7 @@ function App() {
 
   const fetchTrips = async (isAdmin = false, userId?: string) => {
     try {
+      console.log('🔄 Fetching trips...')
       const tripsData = await DatabaseService.fetchTrips(userId, isAdmin)
       
       if (isAdmin) {
@@ -99,45 +147,45 @@ function App() {
       } else {
         setTrips(tripsData)
       }
+      console.log('✅ Trips loaded:', tripsData.length)
     } catch (error) {
-      console.error('Error fetching trips:', error)
-      setError('Erro ao carregar viagens.')
+      console.error('❌ Error fetching trips:', error)
+      // Don't set error state for trips loading failure
     }
   }
 
   const handleLogout = async () => {
     try {
+      setLoading(true)
       await supabase.auth.signOut()
-      setUser(null)
-      setUserProfile(null)
-      setCurrentView('auth')
-      setTrips([])
-      setAllTrips([])
-      setError('')
-      setSuccess('')
+      // State will be cleared by auth state change listener
     } catch (error) {
-      console.error('Error logging out:', error)
+      console.error('❌ Error logging out:', error)
       setError('Erro ao fazer logout.')
+    } finally {
+      setLoading(false)
     }
   }
 
   const handleTripSaved = () => {
     setSuccess('Viagem registrada com sucesso!')
-    if (userProfile) {
-      fetchTrips(userProfile.role === 'admin', user?.id)
+    if (userProfile && user) {
+      fetchTrips(userProfile.role === 'admin', user.id)
     }
   }
 
-  if (loading) {
+  // Show loading only during initial auth check
+  if (loading && !user) {
     return (
       <div className="app">
         <div className="container loading-container">
-          <LoadingSpinner text="Carregando..." />
+          <LoadingSpinner text="Verificando autenticação..." />
         </div>
       </div>
     )
   }
 
+  // Show auth view if no user
   if (!user) {
     return (
       <div className="app">
@@ -147,6 +195,17 @@ function App() {
           setError={setError}
           setSuccess={setSuccess}
         />
+      </div>
+    )
+  }
+
+  // Show loading if user exists but no profile yet
+  if (user && !userProfile && loading) {
+    return (
+      <div className="app">
+        <div className="container loading-container">
+          <LoadingSpinner text="Carregando perfil..." />
+        </div>
       </div>
     )
   }

@@ -20,46 +20,29 @@ export function AuthView({ error, success, setError, setSuccess }: AuthViewProps
     setError('')
     setSuccess('')
 
-    // Validate password length for signup
-    if (authMode === 'signup' && password.length < 6) {
-      setError('A senha deve ter pelo menos 6 caracteres.')
-      setLoading(false)
-      return
-    }
-
     try {
       if (authMode === 'login') {
+        console.log('🔄 Attempting login for:', email)
         const { error } = await supabase.auth.signInWithPassword({
           email,
           password,
         })
-        if (error) {
-          if (error.message.includes('Invalid login credentials')) {
-            throw new Error('Email ou senha incorretos. Verifique suas credenciais.')
-          }
-          throw error
-        }
+        if (error) throw error
+        console.log('✅ Login successful')
       } else {
+        console.log('🔄 Attempting signup for:', email)
         const { error } = await supabase.auth.signUp({
           email,
           password,
         })
-        if (error) {
-          if (error.message.includes('Password should be at least 6 characters')) {
-            throw new Error('A senha deve ter pelo menos 6 caracteres.')
-          }
-          if (error.message.includes('User already registered')) {
-            throw new Error('Este email já está cadastrado. Tente fazer login.')
-          }
-          throw error
-        }
-        setSuccess('Conta criada com sucesso! Você já pode fazer login.')
+        if (error) throw error
+        setSuccess('Conta criada com sucesso! Você pode fazer login agora.')
         setAuthMode('login')
-        setPassword('')
+        console.log('✅ Signup successful')
       }
     } catch (error: any) {
-      console.error('Auth error:', error)
-      setError(error.message)
+      console.error('❌ Auth error:', error)
+      setError(error.message || 'Erro na autenticação')
     } finally {
       setLoading(false)
     }
@@ -71,8 +54,19 @@ export function AuthView({ error, success, setError, setSuccess }: AuthViewProps
         Gridspertise Travel
       </h2>
       
-      {error && <div className="error-message">{error}</div>}
-      {success && <div className="success-message">{success}</div>}
+      {error && (
+        <div className="error-message">
+          <span>{error}</span>
+          <button className="close-button" onClick={() => setError('')}>×</button>
+        </div>
+      )}
+      
+      {success && (
+        <div className="success-message">
+          <span>{success}</span>
+          <button className="close-button" onClick={() => setSuccess('')}>×</button>
+        </div>
+      )}
 
       <form onSubmit={handleAuth}>
         <div className="form-group">
@@ -82,7 +76,7 @@ export function AuthView({ error, success, setError, setSuccess }: AuthViewProps
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            placeholder="seu@email.com"
+            disabled={loading}
           />
         </div>
         
@@ -93,14 +87,9 @@ export function AuthView({ error, success, setError, setSuccess }: AuthViewProps
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
+            disabled={loading}
             minLength={6}
-            placeholder="Mínimo 6 caracteres"
           />
-          {authMode === 'signup' && (
-            <small style={{color: '#666', fontSize: '0.8rem'}}>
-              A senha deve ter pelo menos 6 caracteres
-            </small>
-          )}
         </div>
 
         <button 
