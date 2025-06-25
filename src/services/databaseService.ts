@@ -7,7 +7,6 @@ export class DatabaseService {
     try {
       console.log('📊 Buscando usuários...')
       
-      // Try the 'users' table first (current schema)
       const { data: usersData, error: usersError } = await supabase
         .from('users')
         .select('*')
@@ -31,10 +30,8 @@ export class DatabaseService {
     try {
       console.log('🧳 Buscando viagens...', { userId, isAdmin })
       
-      let query = supabase.from('trips').select(`
-        *,
-        users:user_id (name, email)
-      `)
+      // Simplified query without join to avoid RLS issues
+      let query = supabase.from('trips').select('*')
 
       if (!isAdmin && userId) {
         query = query.eq('user_id', userId)
@@ -42,7 +39,7 @@ export class DatabaseService {
 
       const { data, error } = await query
         .order('created_at', { ascending: false })
-        .limit(100) // Add limit to prevent large queries
+        .limit(100)
 
       if (error) {
         console.error('❌ Error fetching trips:', error)
@@ -67,7 +64,7 @@ export class DatabaseService {
         .select('*')
         .order('year', { ascending: false })
         .order('month', { ascending: false })
-        .limit(50) // Add limit
+        .limit(50)
 
       if (error) {
         console.error('❌ Error fetching budgets:', error)
