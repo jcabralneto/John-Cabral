@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { LoadingSpinner } from './LoadingSpinner'
 import type { User } from '@supabase/supabase-js'
@@ -38,10 +38,25 @@ export function ChatInterface({ user, onTripSaved, onError }: ChatInterfaceProps
     trip_reason: null
   })
   const [loading, setLoading] = useState(false)
+  
+  // Ref para o container de mensagens para scroll automático
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const chatMessagesRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     initializeChat()
   }, [])
+
+  // Scroll automático sempre que as mensagens mudarem
+  useEffect(() => {
+    scrollToBottom()
+  }, [messages])
+
+  const scrollToBottom = () => {
+    if (chatMessagesRef.current) {
+      chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight
+    }
+  }
 
   const initializeChat = () => {
     setMessages([{
@@ -233,7 +248,8 @@ export function ChatInterface({ user, onTripSaved, onError }: ChatInterfaceProps
       case 'reason':
         const validReason = validateTripReason(userInput)
         if (validReason) {
-          setTripData(prev => ({ ...prev, trip_reason: validReason }))
+          const updatedTripData = { ...tripData, trip_reason: validReason }
+          setTripData(updatedTripData)
           
           // Show confirmation immediately after reason
           aiResponse = 'confirmation'
@@ -248,7 +264,7 @@ export function ChatInterface({ user, onTripSaved, onError }: ChatInterfaceProps
     const responseMessage: ChatMessage = {
       type: 'ai',
       content: aiResponse,
-      data: aiResponse === 'confirmation' ? tripData : undefined,
+      data: aiResponse === 'confirmation' ? { ...tripData, trip_reason: validateTripReason(userInput) } : undefined,
       timestamp: new Date()
     }
 
@@ -259,6 +275,14 @@ export function ChatInterface({ user, onTripSaved, onError }: ChatInterfaceProps
   const confirmTripData = async () => {
     try {
       setLoading(true)
+      console.log('🔄 Salvando viagem:', tripData)
+      
+      // Validar dados obrigatórios
+      if (!tripData.trip_date || !tripData.destination_country || !tripData.destination_city || 
+          tripData.ticket_cost === null || tripData.accommodation_cost === null || 
+          tripData.daily_allowances === null || !tripData.trip_reason) {
+        throw new Error('Dados incompletos para salvar a viagem')
+      }
       
       const tripInsert = {
         user_id: user.id,
@@ -273,11 +297,19 @@ export function ChatInterface({ user, onTripSaved, onError }: ChatInterfaceProps
         trip_reason: tripData.trip_reason
       }
 
-      const { error } = await supabase
+      console.log('📤 Dados para inserção:', tripInsert)
+
+      const { data, error } = await supabase
         .from('trips')
         .insert([tripInsert])
+        .select()
 
-      if (error) throw error
+      if (error) {
+        console.error('❌ Erro do Supabase:', error)
+        throw error
+      }
+
+      console.log('✅ Viagem salva com sucesso:', data)
 
       const successMessage: ChatMessage = {
         type: 'ai',
@@ -302,8 +334,8 @@ export function ChatInterface({ user, onTripSaved, onError }: ChatInterfaceProps
       onTripSaved()
 
     } catch (error: any) {
-      console.error('Erro ao salvar viagem:', error)
-      onError('Erro ao registrar viagem. Tente novamente.')
+      console.error('❌ Erro ao salvar viagem:', error)
+      onError(`Erro ao registrar viagem: ${error.message || 'Erro desconhecido'}`)
     } finally {
       setLoading(false)
     }
@@ -349,7 +381,7 @@ export function ChatInterface({ user, onTripSaved, onError }: ChatInterfaceProps
           🤖 Assistente de Viagem - Passo a Passo
         </div>
         
-        <div className="chat-messages">
+        <div className="chat-messages" ref={chatMessagesRef}>
           {messages.map((message, index) => (
             <div key={index} className={`message ${message.type}`}>
               <div className="message-content">
@@ -384,6 +416,7 @@ export function ChatInterface({ user, onTripSaved, onError }: ChatInterfaceProps
                       <button 
                         className="btn btn-secondary"
                         onClick={startNewTrip}
+                        disabled={loading}
                       >
                         ❌ Recomeçar
                       </button>
@@ -408,6 +441,8 @@ export function ChatInterface({ user, onTripSaved, onError }: ChatInterfaceProps
               </div>
             </div>
           ))}
+          {/* Elemento invisível para scroll automático */}
+          <div ref={messagesEndRef} />
         </div>
         
         <div className="chat-input">
@@ -433,7 +468,7 @@ export function ChatInterface({ user, onTripSaved, onError }: ChatInterfaceProps
             onClick={handleStepResponse}
             disabled={loading || !inputMessage.trim() || currentStep === 'confirmation' || currentStep === 'initial'}
           >
-            Enviar
+            {loading ? <LoadingSpinner /> : 'Enviar'}
           </button>
         </div>
       </div>
