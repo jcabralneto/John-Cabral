@@ -12,7 +12,7 @@ export class DatabaseService {
         .from('users')
         .select('*')
         .eq('id', userId)
-        .single()
+        .maybeSingle()
 
       if (existingProfile && !fetchError) {
         console.log('✅ Existing profile found')
@@ -21,7 +21,7 @@ export class DatabaseService {
 
       console.log('ℹ️ Profile not found, creating new one...')
 
-      // Create new profile
+      // Create new profile using upsert
       const newProfileData = {
         id: userId,
         name: email.split('@')[0],
@@ -29,29 +29,15 @@ export class DatabaseService {
         role: email === 'admin@gridspertise.com' ? 'admin' as const : 'regular' as const
       }
 
-      const { data: newProfile, error: insertError } = await supabase
+      const { data: newProfile, error: upsertError } = await supabase
         .from('users')
-        .insert([newProfileData])
+        .upsert(newProfileData, { onConflict: 'id' })
         .select()
         .single()
 
-      if (insertError) {
-        console.error('❌ Error creating profile:', insertError)
-        
-        // Try upsert as fallback
-        const { data: upsertProfile, error: upsertError } = await supabase
-          .from('users')
-          .upsert(newProfileData, { onConflict: 'id' })
-          .select()
-          .single()
-
-        if (upsertError) {
-          console.error('❌ Error upserting profile:', upsertError)
-          return null
-        }
-
-        console.log('✅ Profile upserted successfully')
-        return upsertProfile
+      if (upsertError) {
+        console.error('❌ Error upserting profile:', upsertError)
+        return null
       }
 
       console.log('✅ Profile created successfully')
@@ -90,8 +76,7 @@ export class DatabaseService {
       console.log('🔄 Fetching trips for user:', userId, 'isAdmin:', isAdmin)
 
       let query = supabase.from('trips').select(`
-        *,
-        users:user_id (name, email)
+        *
       `)
 
       if (!isAdmin && userId) {
@@ -116,6 +101,37 @@ export class DatabaseService {
     } catch (error) {
       console.error('❌ Error fetching trips:', error)
       return []
+    }
+  }
+
+  // Fetch user details for trips separately to avoid permission issues
+  static async enrichTripsWithUserData(trips: Trip[]): Promise<Trip[]> {
+    try {
+      const userIds = [...new Set(trips.map(trip => trip.user_id).filter(Boolean))]
+      
+      if (userIds.length === 0) {
+        return trips
+      }
+
+      const { data: users, error } = await supabase
+        .from('users')
+        .select('id, name, email')
+        .in('id', userIds)
+
+      if (error) {
+        console.warn('⚠️ Could not fetch user details:', error)
+        return trips
+      }
+
+      const userMap = new Map(users?.map(user => [user.id, user]) || [])
+
+      return trips.map(trip => ({
+        ...trip,
+        users: trip.user_id ? userMap.get(trip.user_id) : undefined
+      }))
+    } catch (error) {
+      console.warn('⚠️ Error enriching trips with user data:', error)
+      return trips
     }
   }
 
