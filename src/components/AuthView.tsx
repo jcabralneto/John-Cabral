@@ -21,20 +21,33 @@ export function AuthView({ error, success, setError, setSuccess }: AuthViewProps
     setSuccess('')
 
     try {
+      // Add timeout to auth operations
+      const createTimeoutPromise = (ms: number) => new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('Authentication timeout')), ms)
+      )
+
       if (authMode === 'login') {
         console.log('🔄 Attempting login for:', email)
-        const { error } = await supabase.auth.signInWithPassword({
+        
+        const loginPromise = supabase.auth.signInWithPassword({
           email,
           password,
         })
+
+        const { error } = await Promise.race([loginPromise, createTimeoutPromise(10000)])
+        
         if (error) throw error
         console.log('✅ Login successful')
       } else {
         console.log('🔄 Attempting signup for:', email)
-        const { error } = await supabase.auth.signUp({
+        
+        const signupPromise = supabase.auth.signUp({
           email,
           password,
         })
+
+        const { error } = await Promise.race([signupPromise, createTimeoutPromise(10000)])
+        
         if (error) throw error
         setSuccess('Conta criada com sucesso! Você pode fazer login agora.')
         setAuthMode('login')
@@ -42,7 +55,11 @@ export function AuthView({ error, success, setError, setSuccess }: AuthViewProps
       }
     } catch (error: any) {
       console.error('❌ Auth error:', error)
-      setError(error.message || 'Erro na autenticação')
+      if (error.message === 'Authentication timeout') {
+        setError('Timeout na autenticação. Verifique sua conexão e tente novamente.')
+      } else {
+        setError(error.message || 'Erro na autenticação')
+      }
     } finally {
       setLoading(false)
     }
