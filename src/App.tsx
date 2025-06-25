@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from './lib/supabase'
+import { DatabaseService } from './services/databaseService'
 import { AuthView } from './components/AuthView'
 import { Navbar } from './components/Navbar'
 import { UserDashboard } from './components/UserDashboard'
@@ -8,7 +9,6 @@ import { ChatInterface } from './components/ChatInterface'
 import { LoadingSpinner } from './components/LoadingSpinner'
 import { ErrorMessage } from './components/ErrorMessage'
 import { SuccessMessage } from './components/SuccessMessage'
-import { MultiAIManager } from './services/aiManager'
 import type { User } from '@supabase/supabase-js'
 import type { UserProfile, Trip } from './types'
 import './App.css'
@@ -22,80 +22,21 @@ function App() {
   const [success, setSuccess] = useState('')
   const [trips, setTrips] = useState<Trip[]>([])
   const [allTrips, setAllTrips] = useState<Trip[]>([])
-  const [aiManager] = useState(() => new MultiAIManager())
 
+  // Check for logged in user
   useEffect(() => {
-    console.log('🚀 App iniciando...')
-    
-    // Set a maximum loading time
-    const loadingTimeout = setTimeout(() => {
-      console.log('⏰ Timeout de carregamento atingido')
-      setLoading(false)
-      if (!user) {
-        console.log('📝 Mostrando tela de login')
-      }
-    }, 5000)
-
-    const initAuth = async () => {
-      try {
-        console.log('🔐 Verificando sessão...')
-        const { data: { session } } = await supabase.auth.getSession()
-        
-        if (session?.user) {
-          console.log('✅ Usuário logado:', session.user.email)
-          setUser(session.user)
-          
-          // Create basic profile immediately
-          const basicProfile: UserProfile = {
-            id: session.user.id,
-            name: session.user.email?.split('@')[0] || 'Usuário',
-            email: session.user.email || null,
-            role: session.user.email === 'admin@gridspertise.com' ? 'admin' : 'regular'
-          }
-          
-          setUserProfile(basicProfile)
-          setCurrentView(basicProfile.role === 'admin' ? 'adminDashboard' : 'userDashboard')
-          
-          // Try to create/update user in database (non-blocking)
-          createUserProfile(session.user, basicProfile).catch(console.error)
-          
-        } else {
-          console.log('ℹ️ Nenhum usuário logado')
-        }
-        
-        clearTimeout(loadingTimeout)
-        setLoading(false)
-        
-      } catch (error: any) {
-        console.error('❌ Erro na inicialização:', error)
-        clearTimeout(loadingTimeout)
-        setLoading(false)
-        setError('Erro ao conectar. Tente recarregar a página.')
-      }
-    }
-
-    initAuth()
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('🔄 Auth mudou:', event)
-      
-      if (session?.user) {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
         setUser(session.user)
-        
-        const basicProfile: UserProfile = {
-          id: session.user.id,
-          name: session.user.email?.split('@')[0] || 'Usuário',
-          email: session.user.email || null,
-          role: session.user.email === 'admin@gridspertise.com' ? 'admin' : 'regular'
-        }
-        
-        setUserProfile(basicProfile)
-        setCurrentView(basicProfile.role === 'admin' ? 'adminDashboard' : 'userDashboard')
-        
-        // Try to create/update user in database (non-blocking)
-        createUserProfile(session.user, basicProfile).catch(console.error)
-        
+        handleUserLogin(session.user)
+      }
+      setLoading(false)
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session) {
+        setUser(session.user)
+        await handleUserLogin(session.user)
       } else {
         setUser(null)
         setUserProfile(null)
@@ -103,108 +44,100 @@ function App() {
         setTrips([])
         setAllTrips([])
       }
-      
-      setLoading(false)
     })
 
-    return () => {
-      clearTimeout(loadingTimeout)
-      subscription.unsubscribe()
-    }
+    return () => subscription.unsubscribe()
   }, [])
 
-  const createUserProfile = async (authUser: User, profile: UserProfile) => {
+  const handleUserLogin = async (user: User) => {
     try {
-      console.log('👤 Tentando criar/atualizar perfil no banco...')
+      setLoading(true)
       
-      // Use upsert to handle both insert and update in one operation
-      // This respects RLS policies better than separate select/insert/update operations
-      const { error: upsertError } = await supabase
+      // First, try to get existing profile
+      const { data: existingProfile, error: fetchError } = await supabase
         .from('users')
-        .upsert({
-          id: authUser.id,
-          name: profile.name,
-          email: profile.email,
-          role: profile.role
-        }, {
-          onConflict: 'id'
-        })
+        .select('*')
+        .eq('id', user.id)
+        .single()
 
-      if (upsertError) {
-        console.warn('⚠️ Erro ao criar/atualizar perfil:', upsertError)
+      let profile: UserProfile
+
+      if (fetchError || !existingProfile) {
+        // Profile doesn't exist, create it
+        console.log('Creating new user profile...')
+        const newProfile = await DatabaseService.upsertUserProfile(user.id, user.email || '')
+        
+        if (!newProfile) {
+          throw new Error('Failed to create user profile')
+        }
+        
+        profile = newProfile
       } else {
-        console.log('✅ Perfil criado/atualizado no banco')
+        profile = existingProfile
       }
+
+      setUserProfile(profile)
+      setCurrentView(profile.role === 'admin' ? 'adminDashboard' : 'userDashboard')
+      
+      // Load trips
+      await fetchTrips(profile.role === 'admin', user.id)
+      
     } catch (error) {
-      console.warn('⚠️ Erro ao criar/atualizar perfil:', error)
-      // Don't show error to user, continue with local profile
+      console.error('Error handling user login:', error)
+      setError('Erro ao carregar perfil do usuário. Tente fazer login novamente.')
+    } finally {
+      setLoading(false)
     }
   }
 
-  const loadTrips = async () => {
-    if (!user || !userProfile) return
-
+  const fetchTrips = async (isAdmin = false, userId?: string) => {
     try {
-      console.log('🧳 Carregando viagens...')
+      const tripsData = await DatabaseService.fetchTrips(userId, isAdmin)
       
-      let query = supabase.from('trips').select('*')
-      
-      if (userProfile.role !== 'admin') {
-        query = query.eq('user_id', user.id)
-      }
-      
-      const { data, error } = await query
-        .order('created_at', { ascending: false })
-        .limit(50)
-
-      if (error) {
-        console.warn('⚠️ Erro ao carregar viagens:', error)
-        return
-      }
-
-      if (userProfile.role === 'admin') {
-        setAllTrips(data || [])
+      if (isAdmin) {
+        setAllTrips(tripsData)
       } else {
-        setTrips(data || [])
+        setTrips(tripsData)
       }
-      
-      console.log('✅ Viagens carregadas:', data?.length || 0)
-      
     } catch (error) {
-      console.warn('⚠️ Erro ao carregar viagens:', error)
+      console.error('Error fetching trips:', error)
+      setError('Erro ao carregar viagens.')
     }
   }
-
-  // Load trips when user profile is ready
-  useEffect(() => {
-    if (user && userProfile && !loading) {
-      loadTrips()
-    }
-  }, [user, userProfile, loading])
 
   const handleLogout = async () => {
     try {
       await supabase.auth.signOut()
+      setUser(null)
+      setUserProfile(null)
+      setCurrentView('auth')
+      setTrips([])
+      setAllTrips([])
+      setError('')
+      setSuccess('')
     } catch (error) {
-      console.error('Erro no logout:', error)
+      console.error('Error logging out:', error)
+      setError('Erro ao fazer logout.')
     }
   }
 
-  // Show loading screen
+  const handleTripSaved = () => {
+    setSuccess('Viagem registrada com sucesso!')
+    if (userProfile) {
+      fetchTrips(userProfile.role === 'admin', user?.id)
+    }
+  }
+
   if (loading) {
     return (
       <div className="app">
         <div className="container loading-container">
           <LoadingSpinner text="Carregando..." />
-          <div style={{ marginTop: '1rem', textAlign: 'center', color: '#666' }}>
-            <small>Aguarde alguns segundos...</small>
-          </div>
         </div>
       </div>
     )
   }
 
-  // Show auth screen if no user
   if (!user) {
     return (
       <div className="app">
@@ -218,7 +151,6 @@ function App() {
     )
   }
 
-  // Show main app
   return (
     <div className="app">
       <Navbar 
@@ -244,14 +176,10 @@ function App() {
           <AdminDashboard allTrips={allTrips} />
         )}
 
-        {currentView === 'chat' && (
+        {currentView === 'chat' && user && (
           <ChatInterface 
             user={user}
-            aiManager={aiManager}
-            onTripSaved={() => {
-              setSuccess('Viagem registrada com sucesso!')
-              loadTrips()
-            }}
+            onTripSaved={handleTripSaved}
             onError={setError}
           />
         )}
