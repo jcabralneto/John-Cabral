@@ -117,26 +117,56 @@ function App() {
     try {
       console.log('👤 Tentando criar/atualizar perfil no banco...')
       
-      const { error } = await supabase
+      // First try to check if user exists
+      const { data: existingUser, error: selectError } = await supabase
         .from('users')
-        .upsert([{
-          id: authUser.id,
-          name: profile.name,
-          email: profile.email,
-          role: profile.role
-        }], { 
-          onConflict: 'id',
-          ignoreDuplicates: false 
-        })
+        .select('id')
+        .eq('id', authUser.id)
+        .single()
 
-      if (error) {
-        console.warn('⚠️ Erro ao salvar perfil no banco:', error)
-        // Don't show error to user, just log it
+      if (selectError && selectError.code !== 'PGRST116') {
+        // PGRST116 is "not found" error, which is expected for new users
+        console.warn('⚠️ Erro ao verificar usuário existente:', selectError)
+        return
+      }
+
+      if (existingUser) {
+        // User exists, try to update
+        console.log('👤 Usuário existe, tentando atualizar...')
+        const { error: updateError } = await supabase
+          .from('users')
+          .update({
+            name: profile.name,
+            email: profile.email,
+            role: profile.role
+          })
+          .eq('id', authUser.id)
+
+        if (updateError) {
+          console.warn('⚠️ Erro ao atualizar perfil:', updateError)
+        } else {
+          console.log('✅ Perfil atualizado no banco')
+        }
       } else {
-        console.log('✅ Perfil salvo no banco')
+        // User doesn't exist, try to insert
+        console.log('👤 Usuário não existe, tentando criar...')
+        const { error: insertError } = await supabase
+          .from('users')
+          .insert([{
+            id: authUser.id,
+            name: profile.name,
+            email: profile.email,
+            role: profile.role
+          }])
+
+        if (insertError) {
+          console.warn('⚠️ Erro ao criar perfil:', insertError)
+        } else {
+          console.log('✅ Perfil criado no banco')
+        }
       }
     } catch (error) {
-      console.warn('⚠️ Erro ao criar perfil:', error)
+      console.warn('⚠️ Erro ao criar/atualizar perfil:', error)
       // Don't show error to user, continue with local profile
     }
   }
