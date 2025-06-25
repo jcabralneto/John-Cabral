@@ -27,75 +27,105 @@ function App() {
 
   // Check for logged in user
   useEffect(() => {
+    let mounted = true
+
     const initializeApp = async () => {
       try {
         console.log('🚀 Inicializando aplicação...')
         
+        // Add timeout to prevent infinite loading
+        const timeoutId = setTimeout(() => {
+          if (mounted) {
+            console.log('⏰ Timeout na inicialização')
+            setLoading(false)
+            setError('Timeout na conexão. Tente recarregar a página.')
+          }
+        }, 10000) // 10 second timeout
+
         const { data: { session }, error: sessionError } = await supabase.auth.getSession()
         
+        clearTimeout(timeoutId)
+        
+        if (!mounted) return
+
         if (sessionError) {
           console.error('❌ Erro ao obter sessão:', sessionError)
-          setError('Erro ao conectar com o servidor. Verifique sua conexão.')
-        } else if (session) {
+          setError('Erro ao conectar com o servidor.')
+          setLoading(false)
+          return
+        }
+
+        if (session?.user) {
           console.log('✅ Sessão encontrada:', session.user.email)
           setUser(session.user)
-          await fetchUserProfile(session.user.id)
+          await fetchUserProfile(session.user)
         } else {
           console.log('ℹ️ Nenhuma sessão ativa')
+          setLoading(false)
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('❌ Erro na inicialização:', error)
-        setError('Erro ao inicializar aplicação.')
-      } finally {
-        setLoading(false)
+        if (mounted) {
+          setError(`Erro ao inicializar: ${error.message}`)
+          setLoading(false)
+        }
       }
     }
 
     initializeApp()
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!mounted) return
+      
       console.log('🔄 Auth state changed:', event)
       
-      if (session) {
+      if (session?.user) {
         setUser(session.user)
-        await fetchUserProfile(session.user.id)
+        await fetchUserProfile(session.user)
       } else {
         setUser(null)
         setUserProfile(null)
         setCurrentView('auth')
+        setLoading(false)
       }
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
   }, [])
 
-  const fetchUserProfile = async (userId: string) => {
+  const fetchUserProfile = async (authUser: User) => {
     try {
-      console.log('👤 Buscando perfil do usuário:', userId)
+      console.log('👤 Buscando perfil do usuário:', authUser.id)
       
-      // Get user profile from users table
+      // Try to get existing user profile
       const { data: userData, error: userError } = await supabase
         .from('users')
         .select('*')
-        .eq('id', userId)
-        .single()
+        .eq('id', authUser.id)
+        .maybeSingle() // Use maybeSingle to avoid errors when no rows found
 
-      if (!userError && userData) {
+      if (userData) {
         console.log('✅ Perfil encontrado:', userData)
         setUserProfile(userData)
         setCurrentView(userData.role === 'admin' ? 'adminDashboard' : 'userDashboard')
-        await fetchTrips(userData.role === 'admin', userId)
+        setLoading(false)
+        
+        // Load trips in background
+        fetchTrips(userData.role === 'admin', authUser.id).catch(console.error)
         return
       }
 
-      console.log('⚠️ Usuário não encontrado, tentando criar...')
+      console.log('⚠️ Usuário não encontrado, criando novo perfil...')
       
-      // Create user if not exists
+      // Create new user profile
       const newUser: UserProfile = {
-        id: userId,
-        name: user?.email?.split('@')[0] || 'Usuário',
-        email: user?.email || null,
-        role: user?.email === 'admin@gridspertise.com' ? 'admin' : 'regular'
+        id: authUser.id,
+        name: authUser.email?.split('@')[0] || 'Usuário',
+        email: authUser.email || null,
+        role: authUser.email === 'admin@gridspertise.com' ? 'admin' : 'regular'
       }
 
       const { data: createdUser, error: createError } = await supabase
@@ -106,17 +136,36 @@ function App() {
 
       if (createError) {
         console.error('❌ Erro ao criar usuário:', createError)
-        throw createError
+        // If creation fails, still allow user to continue with basic profile
+        setUserProfile(newUser)
+        setCurrentView(newUser.role === 'admin' ? 'adminDashboard' : 'userDashboard')
+        setError('Perfil criado localmente. Algumas funcionalidades podem estar limitadas.')
+      } else {
+        console.log('✅ Usuário criado:', createdUser)
+        setUserProfile(createdUser)
+        setCurrentView(createdUser.role === 'admin' ? 'adminDashboard' : 'userDashboard')
       }
 
-      console.log('✅ Usuário criado:', createdUser)
-      setUserProfile(createdUser)
-      setCurrentView(createdUser.role === 'admin' ? 'adminDashboard' : 'userDashboard')
-      await fetchTrips(createdUser.role === 'admin', userId)
+      setLoading(false)
+      
+      // Load trips in background
+      fetchTrips(newUser.role === 'admin', authUser.id).catch(console.error)
 
     } catch (error: any) {
       console.error('❌ Erro ao buscar/criar perfil:', error)
-      setError(`Erro ao carregar perfil: ${error.message}`)
+      
+      // Fallback: create basic profile to allow user to continue
+      const fallbackProfile: UserProfile = {
+        id: authUser.id,
+        name: authUser.email?.split('@')[0] || 'Usuário',
+        email: authUser.email || null,
+        role: authUser.email === 'admin@gridspertise.com' ? 'admin' : 'regular'
+      }
+      
+      setUserProfile(fallbackProfile)
+      setCurrentView(fallbackProfile.role === 'admin' ? 'adminDashboard' : 'userDashboard')
+      setError(`Erro ao carregar perfil: ${error.message}. Usando perfil temporário.`)
+      setLoading(false)
     }
   }
 
@@ -134,30 +183,43 @@ function App() {
       }
     } catch (error: any) {
       console.error('❌ Erro ao carregar viagens:', error)
-      setError(`Erro ao carregar viagens: ${error.message}`)
+      // Don't show error for trips loading failure, just log it
+      console.warn('Viagens não puderam ser carregadas, mas o app continuará funcionando')
     }
   }
 
   const handleLogout = async () => {
-    console.log('👋 Fazendo logout...')
-    await supabase.auth.signOut()
+    try {
+      console.log('👋 Fazendo logout...')
+      await supabase.auth.signOut()
+      setUser(null)
+      setUserProfile(null)
+      setCurrentView('auth')
+      setTrips([])
+      setAllTrips([])
+      setError('')
+      setSuccess('')
+    } catch (error: any) {
+      console.error('Erro no logout:', error)
+      setError('Erro ao fazer logout')
+    }
   }
 
-  const clearMessages = () => {
-    setError('')
-    setSuccess('')
-  }
-
+  // Show loading screen
   if (loading) {
     return (
       <div className="app">
         <div className="container loading-container">
           <LoadingSpinner text="Carregando aplicação..." />
+          <div style={{ marginTop: '1rem', textAlign: 'center', color: '#666' }}>
+            <small>Se o carregamento demorar muito, recarregue a página</small>
+          </div>
         </div>
       </div>
     )
   }
 
+  // Show auth screen if no user
   if (!user) {
     return (
       <div className="app">
@@ -171,6 +233,7 @@ function App() {
     )
   }
 
+  // Show main app
   return (
     <div className="app">
       <Navbar 

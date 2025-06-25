@@ -5,6 +5,8 @@ export class DatabaseService {
   // Fetch users from the correct table
   static async fetchUsers(): Promise<UserProfile[]> {
     try {
+      console.log('📊 Buscando usuários...')
+      
       // Try the 'users' table first (current schema)
       const { data: usersData, error: usersError } = await supabase
         .from('users')
@@ -16,42 +18,8 @@ export class DatabaseService {
         return usersData
       }
 
-      // Fallback to 'Usuarios' table (legacy)
-      const { data: usuariosData, error: usuariosError } = await supabase
-        .from('Usuarios')
-        .select('*')
-        .order('nome_completo')
-
-      if (!usuariosError && usuariosData) {
-        console.log('✅ Loaded users from "Usuarios" table:', usuariosData.length)
-        // Map legacy structure to current structure
-        return usuariosData.map(user => ({
-          id: user.id,
-          name: user.nome_completo,
-          email: user.email,
-          role: user.permissao === 'admin' ? 'admin' : 'regular',
-          created_at: user.data_cadastro
-        }))
-      }
-
-      // Fallback to profiles table
-      const { data: profilesData, error: profilesError } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('email')
-
-      if (!profilesError && profilesData) {
-        console.log('✅ Loaded users from "profiles" table:', profilesData.length)
-        return profilesData.map(profile => ({
-          id: profile.id,
-          name: profile.email?.split('@')[0] || 'Unknown',
-          email: profile.email,
-          role: profile.role,
-          created_at: profile.created_at
-        }))
-      }
-
-      throw new Error('No user table found')
+      console.warn('⚠️ Erro ao carregar usuários:', usersError)
+      return []
     } catch (error) {
       console.error('❌ Error fetching users:', error)
       return []
@@ -61,6 +29,8 @@ export class DatabaseService {
   // Fetch trips from the correct table
   static async fetchTrips(userId?: string, isAdmin = false): Promise<Trip[]> {
     try {
+      console.log('🧳 Buscando viagens...', { userId, isAdmin })
+      
       let query = supabase.from('trips').select(`
         *,
         users:user_id (name, email)
@@ -70,7 +40,9 @@ export class DatabaseService {
         query = query.eq('user_id', userId)
       }
 
-      const { data, error } = await query.order('created_at', { ascending: false })
+      const { data, error } = await query
+        .order('created_at', { ascending: false })
+        .limit(100) // Add limit to prevent large queries
 
       if (error) {
         console.error('❌ Error fetching trips:', error)
@@ -88,11 +60,14 @@ export class DatabaseService {
   // Fetch budgets
   static async fetchBudgets(): Promise<Budget[]> {
     try {
+      console.log('💰 Buscando orçamentos...')
+      
       const { data, error } = await supabase
         .from('budgets')
         .select('*')
         .order('year', { ascending: false })
         .order('month', { ascending: false })
+        .limit(50) // Add limit
 
       if (error) {
         console.error('❌ Error fetching budgets:', error)
@@ -152,33 +127,51 @@ export class DatabaseService {
     }
 
     try {
+      console.log('🔍 Verificando tabelas do banco...')
+      
       // Check users table
-      const { error: usersError } = await supabase
-        .from('users')
-        .select('id')
-        .limit(1)
-      results.users = !usersError
+      try {
+        const { error: usersError } = await supabase
+          .from('users')
+          .select('id')
+          .limit(1)
+        results.users = !usersError
+      } catch (e) {
+        results.users = false
+      }
 
       // Check trips table
-      const { error: tripsError } = await supabase
-        .from('trips')
-        .select('id')
-        .limit(1)
-      results.trips = !tripsError
+      try {
+        const { error: tripsError } = await supabase
+          .from('trips')
+          .select('id')
+          .limit(1)
+        results.trips = !tripsError
+      } catch (e) {
+        results.trips = false
+      }
 
       // Check budgets table
-      const { error: budgetsError } = await supabase
-        .from('budgets')
-        .select('id')
-        .limit(1)
-      results.budgets = !budgetsError
+      try {
+        const { error: budgetsError } = await supabase
+          .from('budgets')
+          .select('id')
+          .limit(1)
+        results.budgets = !budgetsError
+      } catch (e) {
+        results.budgets = false
+      }
 
       // Check legacy tables
-      const { error: legacyError } = await supabase
-        .from('Usuarios')
-        .select('id')
-        .limit(1)
-      results.legacy = !legacyError
+      try {
+        const { error: legacyError } = await supabase
+          .from('paises')
+          .select('id')
+          .limit(1)
+        results.legacy = !legacyError
+      } catch (e) {
+        results.legacy = false
+      }
 
       console.log('📊 Database tables status:', results)
       return results
