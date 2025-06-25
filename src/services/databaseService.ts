@@ -7,49 +7,18 @@ export class DatabaseService {
     try {
       console.log('🔄 Getting/creating profile for:', email)
 
-      // First, try to get existing profile from users table by email
+      // First, try to get existing profile by user ID (primary key)
       const { data: existingProfile, error: fetchError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', email)
-        .maybeSingle()
-
-      if (existingProfile && !fetchError) {
-        console.log('✅ Existing profile found by email')
-        
-        // If the existing profile has a different user ID, update it
-        if (existingProfile.id !== userId) {
-          const { data: updatedProfile, error: updateError } = await supabase
-            .from('users')
-            .update({ id: userId })
-            .eq('email', email)
-            .select()
-            .single()
-          
-          if (updateError) {
-            console.error('❌ Error updating profile ID:', updateError)
-            return existingProfile // Return existing profile even if update fails
-          }
-          
-          console.log('✅ Profile ID updated successfully')
-          return updatedProfile
-        }
-        
-        return existingProfile
-      }
-
-      // Also check by user ID in case email is different
-      const { data: profileById, error: fetchByIdError } = await supabase
         .from('users')
         .select('*')
         .eq('id', userId)
         .maybeSingle()
 
-      if (profileById && !fetchByIdError) {
+      if (existingProfile && !fetchError) {
         console.log('✅ Existing profile found by ID')
         
-        // Update email if it's different
-        if (profileById.email !== email) {
+        // Update email if it's different and not null
+        if (existingProfile.email !== email && email) {
           const { data: updatedProfile, error: updateError } = await supabase
             .from('users')
             .update({ email: email })
@@ -59,34 +28,82 @@ export class DatabaseService {
           
           if (updateError) {
             console.error('❌ Error updating profile email:', updateError)
-            return profileById // Return existing profile even if update fails
+            return existingProfile // Return existing profile even if update fails
           }
           
           console.log('✅ Profile email updated successfully')
           return updatedProfile
         }
         
-        return profileById
+        return existingProfile
+      }
+
+      // If no profile found by ID, check if one exists by email
+      if (email) {
+        const { data: profileByEmail, error: emailError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('email', email)
+          .maybeSingle()
+
+        if (profileByEmail && !emailError) {
+          console.log('✅ Existing profile found by email, updating ID')
+          
+          // Update the profile with the correct user ID
+          const { data: updatedProfile, error: updateError } = await supabase
+            .from('users')
+            .update({ id: userId })
+            .eq('email', email)
+            .select()
+            .single()
+          
+          if (updateError) {
+            console.error('❌ Error updating profile ID:', updateError)
+            return profileByEmail // Return existing profile even if update fails
+          }
+          
+          return updatedProfile
+        }
       }
 
       console.log('ℹ️ Profile not found, creating new one...')
 
-      // Create new profile
+      // Create new profile - use upsert to handle potential race conditions
       const newProfileData = {
         id: userId,
-        name: email.split('@')[0],
+        name: email ? email.split('@')[0] : 'User',
         email: email,
         role: email === 'admin@gridspertise.com' ? 'admin' as const : 'regular' as const
       }
 
       const { data: newProfile, error: insertError } = await supabase
         .from('users')
-        .insert(newProfileData)
+        .upsert(newProfileData, { 
+          onConflict: 'id',
+          ignoreDuplicates: false 
+        })
         .select()
         .single()
 
       if (insertError) {
-        console.error('❌ Error inserting profile:', insertError)
+        console.error('❌ Error upserting profile:', insertError)
+        
+        // If it's a duplicate key error, try to fetch the existing profile
+        if (insertError.code === '23505') {
+          console.log('🔄 Duplicate detected, fetching existing profile...')
+          
+          const { data: existingAfterError, error: refetchError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', userId)
+            .maybeSingle()
+          
+          if (existingAfterError && !refetchError) {
+            console.log('✅ Retrieved existing profile after duplicate error')
+            return existingAfterError
+          }
+        }
+        
         return null
       }
 
@@ -99,7 +116,7 @@ export class DatabaseService {
     }
   }
 
-  // Fetch users from the users table
+  // Fetch users from the users table with better error handling
   static async fetchUsers(): Promise<UserProfile[]> {
     try {
       const { data, error } = await supabase
@@ -109,6 +126,13 @@ export class DatabaseService {
 
       if (error) {
         console.error('❌ Error fetching users:', error)
+        
+        // If it's a permission error, return empty array gracefully
+        if (error.code === '42501') {
+          console.warn('⚠️ Permission denied for users table, returning empty array')
+          return []
+        }
+        
         return []
       }
 
