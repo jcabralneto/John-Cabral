@@ -10,7 +10,7 @@ interface ChatInterfaceProps {
   onError: (error: string) => void
 }
 
-type ChatStep = 'initial' | 'date' | 'country' | 'city' | 'tickets' | 'lodging' | 'allowances' | 'reason' | 'cost_center' | 'confirmation'
+type ChatStep = 'initial' | 'date' | 'country' | 'city' | 'tickets' | 'lodging' | 'allowances' | 'reason' | 'confirmation'
 
 const TRIP_REASONS = [
   'JOBI-M',
@@ -37,7 +37,6 @@ export function ChatInterface({ user, onTripSaved, onError }: ChatInterfaceProps
     trip_type: null,
     trip_reason: null
   })
-  const [costCenter, setCostCenter] = useState<string>('')
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
@@ -224,7 +223,7 @@ export function ChatInterface({ user, onTripSaved, onError }: ChatInterfaceProps
         const allowancesCost = validateCurrency(userInput)
         if (allowancesCost !== null) {
           setTripData(prev => ({ ...prev, daily_allowances: allowancesCost }))
-          aiResponse = `✅ Valor das diárias: R$ ${allowancesCost.toFixed(2)}\n\n🎯 **Qual é o motivo da viagem?**\n\nOpções disponíveis:\n• JOBI-M\n• LVM\n• SERVIÇOS\n• INDIRETO\n• CHILE\n• COLOMBIA\n• SALES\n• OUTROS\n\nDigite uma das opções acima:`
+          aiResponse = `✅ Valor das diárias: R$ ${allowancesCost.toFixed(2)}\n\n🎯 **Qual é o motivo/centro de custo da viagem?**\n\nOpções disponíveis:\n• JOBI-M\n• LVM\n• SERVIÇOS\n• INDIRETO\n• CHILE\n• COLOMBIA\n• SALES\n• OUTROS\n\nDigite uma das opções acima:`
           nextStep = 'reason'
         } else {
           aiResponse = '❌ Valor inválido. Use apenas números.\n\n💰 **Qual foi o valor das diárias/alimentação?**\nExemplo: R$ 450 ou 450,00'
@@ -235,30 +234,13 @@ export function ChatInterface({ user, onTripSaved, onError }: ChatInterfaceProps
         const validReason = validateTripReason(userInput)
         if (validReason) {
           setTripData(prev => ({ ...prev, trip_reason: validReason }))
-          aiResponse = `✅ Motivo registrado: ${validReason}\n\n🏢 **Centro de custo (opcional):**\n\nSe não tiver, digite "não" ou "pular"`
-          nextStep = 'cost_center'
+          
+          // Show confirmation immediately after reason
+          aiResponse = 'confirmation'
+          nextStep = 'confirmation'
         } else {
-          aiResponse = `❌ Motivo inválido. Por favor, escolha uma das opções:\n\n• JOBI-M\n• LVM\n• SERVIÇOS\n• INDIRETO\n• CHILE\n• COLOMBIA\n• SALES\n• OUTROS\n\n🎯 **Qual é o motivo da viagem?**`
+          aiResponse = `❌ Motivo/centro de custo inválido. Por favor, escolha uma das opções:\n\n• JOBI-M\n• LVM\n• SERVIÇOS\n• INDIRETO\n• CHILE\n• COLOMBIA\n• SALES\n• OUTROS\n\n🎯 **Qual é o motivo/centro de custo da viagem?**`
         }
-        break
-
-      case 'cost_center':
-        const skipWords = ['não', 'nao', 'pular', 'skip', 'n']
-        if (skipWords.includes(userInput.toLowerCase())) {
-          setCostCenter('Não informado')
-        } else {
-          setCostCenter(userInput)
-        }
-        
-        // Show confirmation
-        const finalTripData = { ...tripData }
-        if (currentStep === 'cost_center') {
-          // Update with the latest allowances value that was just set
-          finalTripData.daily_allowances = tripData.daily_allowances
-        }
-        
-        aiResponse = 'confirmation'
-        nextStep = 'confirmation'
         break
     }
 
@@ -286,7 +268,7 @@ export function ChatInterface({ user, onTripSaved, onError }: ChatInterfaceProps
         cost_tickets: tripData.ticket_cost,
         cost_lodging: tripData.accommodation_cost,
         cost_daily_allowances: tripData.daily_allowances,
-        cost_center: costCenter || 'Não informado',
+        cost_center: tripData.trip_reason, // Use trip_reason as cost_center
         trip_type: tripData.trip_type,
         trip_reason: tripData.trip_reason
       }
@@ -315,7 +297,6 @@ export function ChatInterface({ user, onTripSaved, onError }: ChatInterfaceProps
         trip_type: null,
         trip_reason: null
       })
-      setCostCenter('')
       setCurrentStep('initial')
       
       onTripSaved()
@@ -339,7 +320,6 @@ export function ChatInterface({ user, onTripSaved, onError }: ChatInterfaceProps
       trip_type: null,
       trip_reason: null
     })
-    setCostCenter('')
     
     const newTripMessage: ChatMessage = {
       type: 'ai',
@@ -385,8 +365,7 @@ export function ChatInterface({ user, onTripSaved, onError }: ChatInterfaceProps
                       <p><strong>✈️ Passagem:</strong> R$ {formatCurrency(message.data.ticket_cost)}</p>
                       <p><strong>🏨 Hospedagem:</strong> R$ {formatCurrency(message.data.accommodation_cost)}</p>
                       <p><strong>💰 Diárias:</strong> R$ {formatCurrency(message.data.daily_allowances)}</p>
-                      <p><strong>🎯 Motivo:</strong> {message.data.trip_reason}</p>
-                      <p><strong>🏢 Centro de Custo:</strong> {costCenter || 'Não informado'}</p>
+                      <p><strong>🎯 Motivo/Centro de Custo:</strong> {message.data.trip_reason}</p>
                       <p><strong>📊 Tipo:</strong> {message.data.trip_type}</p>
                       <p><strong>💵 Total:</strong> R$ {formatCurrency(
                         (message.data.ticket_cost || 0) + 
@@ -445,7 +424,6 @@ export function ChatInterface({ user, onTripSaved, onError }: ChatInterfaceProps
               currentStep === 'lodging' ? 'Ex: R$ 800' :
               currentStep === 'allowances' ? 'Ex: R$ 450' :
               currentStep === 'reason' ? 'Ex: JOBI-M' :
-              currentStep === 'cost_center' ? 'Ex: TI ou "não"' :
               'Digite sua resposta...'
             }
             disabled={loading || currentStep === 'confirmation' || currentStep === 'initial'}
