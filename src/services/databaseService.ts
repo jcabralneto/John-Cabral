@@ -7,7 +7,7 @@ export class DatabaseService {
     try {
       console.log('🔄 Getting/creating profile for:', email)
 
-      // First, try to get existing profile
+      // First, try to get existing profile from users table
       const { data: existingProfile, error: fetchError } = await supabase
         .from('users')
         .select('*')
@@ -63,7 +63,7 @@ export class DatabaseService {
     }
   }
 
-  // Fetch users from the correct table
+  // Fetch users from the users table
   static async fetchUsers(): Promise<UserProfile[]> {
     try {
       const { data, error } = await supabase
