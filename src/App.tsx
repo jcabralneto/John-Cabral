@@ -746,3 +746,65 @@ export default function App() {
   if (user && userProfile) {
     fetchTrips(userProfile.role === 'admin', user.id); // não esqueça de fechar os parênteses!
   }
+  };
+
+  return (
+    <div className="App">
+      {loading && <div className="loading">Carregando...</div>}
+      {error && <div className="error" onClick={() => setError('')}>{error}</div>}
+      {success && <div className="success" onClick={() => setSuccess('')}>{success}</div>}
+      
+      {currentView === 'auth' && !user && (
+        <div className="auth-container">
+          <h2>{authMode === 'login' ? 'Login' : 'Cadastro'}</h2>
+          <form onSubmit={handleAuth}>
+            <input
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+            <input
+              type="password"
+              placeholder="Senha"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+            <button type="submit" disabled={loading}>
+              {authMode === 'login' ? 'Entrar' : 'Cadastrar'}
+            </button>
+          </form>
+          <button
+            type="button"
+            onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}
+          >
+            {authMode === 'login' ? 'Criar conta' : 'Já tenho conta'}
+          </button>
+        </div>
+      )}
+
+      {user && userProfile && (
+        <>
+          <Navbar
+            user={user}
+            userProfile={userProfile}
+            setCurrentView={setCurrentView}
+            onLogout={handleLogout}
+          />
+          
+          {currentView === 'userDashboard' && <UserDashboard trips={trips} />}
+          {currentView === 'adminDashboard' && <AdminDashboard allTrips={allTrips} loading={loading} />}
+          {currentView === 'chat' && (
+            <ChatInterface
+              user={user}
+              onTripSaved={handleTripSavedByChat}
+              onError={setError}
+            />
+          )}
+        </>
+      )}
+    </div>
+  );
+}
