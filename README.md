@@ -198,4 +198,3 @@ npm run test:coverage # Coverage report
 ## License
 
 This project is proprietary to Gridspertise.
-README.md
