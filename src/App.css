@@ -132,3 +132,284 @@ input:disabled { background: #f4f5f7; color: #999; }
   .chat-container { padding: 2vw 0; }
   table { font-size: 0.93rem; }
 }
+
+/* Loading spinner */
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #003366;
+  font-weight: 500;
+}
+
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #e2e2e9;
+  border-top: 2px solid #003366;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Auth container */
+.auth-container {
+  max-width: 400px;
+  margin: 0 auto;
+  padding: 2rem;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.form-group {
+  margin-bottom: 1rem;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  color: #003366;
+}
+
+/* Error and success messages */
+.error-message {
+  background: #ffefef;
+  color: #e33;
+  padding: 10px 16px;
+  margin-bottom: 14px;
+  border-radius: 5px;
+  border: 1px solid #ffe6e6;
+  position: relative;
+}
+
+.success-message {
+  background: #eaffea;
+  color: #12680d;
+  padding: 10px 16px;
+  margin-bottom: 14px;
+  border-radius: 5px;
+  border: 1px solid #c6efce;
+  position: relative;
+}
+
+/* Chat styles */
+.chat-container {
+  max-width: 800px;
+  margin: 0 auto;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.chat-header {
+  background: #003366;
+  color: white;
+  padding: 1rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.chat-messages {
+  height: 400px;
+  overflow-y: auto;
+  padding: 1rem;
+  background: #f8f9fa;
+}
+
+.message {
+  margin-bottom: 1rem;
+}
+
+.message.ai {
+  text-align: left;
+}
+
+.message.user {
+  text-align: right;
+}
+
+.message-content {
+  display: inline-block;
+  max-width: 80%;
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+  word-wrap: break-word;
+}
+
+.message.ai .message-content {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
+.message.user .message-content {
+  background: #003366;
+  color: white;
+}
+
+.confirmation-card {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 1rem;
+  margin: 0.5rem 0;
+}
+
+.confirmation-title {
+  font-weight: bold;
+  margin-bottom: 1rem;
+  color: #003366;
+}
+
+.confirmation-data p {
+  margin: 0.5rem 0;
+}
+
+.confirmation-buttons {
+  margin-top: 1rem;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.chat-input {
+  display: flex;
+  gap: 0.5rem;
+  padding: 1rem;
+  background: white;
+  border-top: 1px solid #eee;
+}
+
+.chat-input input {
+  flex: 1;
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 1rem;
+}
+
+.chat-input button {
+  padding: 0.75rem 1.5rem;
+  background: #003366;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.chat-input button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+/* Trips grid */
+.trips-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.trip-card {
+  background: white;
+  border: 1px solid #e2e2e9;
+  border-radius: 12px;
+  padding: 1rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.trip-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.trip-type {
+  background: #003366;
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 15px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.trip-destination {
+  font-weight: bold;
+  color: #003366;
+  margin-bottom: 0.5rem;
+}
+
+.trip-date {
+  color: #666;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.trip-costs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.cost-item {
+  text-align: center;
+}
+
+.cost-label {
+  font-size: 0.8rem;
+  color: #666;
+  margin-bottom: 0.25rem;
+}
+
+.cost-value {
+  font-weight: bold;
+  color: #003366;
+}
+
+/* KPI Grid */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.kpi-card {
+  background: #f8f9fa;
+  border: 1px solid #e2e2e9;
+  border-radius: 12px;
+  padding: 1.5rem;
+  text-align: center;
+}
+
+.kpi-value {
+  font-size: 2rem;
+  font-weight: bold;
+  color: #003366;
+  margin-bottom: 0.5rem;
+}
+
+.kpi-label {
+  color: #666;
+  font-size: 0.9rem;
+}
+
+/* Empty state */
+.empty-state {
+  text-align: center;
+  padding: 3rem;
+  color: #666;
+}
+
+.empty-state p {
+  margin-bottom: 1.5rem;
+}
