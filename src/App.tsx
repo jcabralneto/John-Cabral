@@ -746,19 +746,3 @@ export default function App() {
   if (user && userProfile) {
     fetchTrips(userProfile.role === 'admin', user.id); // não esqueça de fechar os parênteses!
   }
-}; // <--- NÃO ESQUEÇA ESSE PONTO E VÍRGULA E FECHAMENTO
-
-
-function ChatInterface({ user, onTripSaved, onError }) {
-  // ... código do chat ...
-}
-
-
-// =====================
-// APP PRINCIPAL
-// =====================
-
-export default function App() {
-  // ... código principal do seu app ...
-}
-
