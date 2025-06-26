@@ -17,7 +17,6 @@ export class DatabaseService {
 
         if (existingEmailProfile && existingEmailProfile.id !== userId && !emailCheckError) {
           console.log('⚠️ Email already exists for different user, will create profile without email')
-          email = '' // Clear email to avoid constraint violation
         }
       }
 
