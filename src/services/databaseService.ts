@@ -36,6 +36,12 @@ export class DatabaseService {
               .single()
             
             if (updateError) {
+              // Handle specific duplicate key constraint violation
+              if (updateError.code === '23505' && updateError.message?.includes('users_email_unique_not_null')) {
+                console.warn('⚠️ Email already exists for another user (constraint violation), keeping current profile')
+                return existingProfile
+              }
+              
               console.error('❌ Error updating profile email:', updateError)
               return existingProfile // Return existing profile even if update fails
             }
