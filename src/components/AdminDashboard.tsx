@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { DatabaseService } from '../services/databaseService'
 import { LoadingSpinner } from './LoadingSpinner'
 import type { Trip, Budget, UserProfile } from '../types'
@@ -93,7 +93,8 @@ export function AdminDashboard({ allTrips }: AdminDashboardProps) {
     return { totalTrips, totalCost, avgCostPerTrip, tripsByType }
   }
 
-  const { totalTrips, totalCost, avgCostPerTrip, tripsByType } = calculateKPIs()
+  const kpiData = useMemo(() => calculateKPIs(), [enrichedTrips])
+  const { totalTrips, totalCost, avgCostPerTrip, tripsByType } = kpiData
 
   if (loading) {
     return (
