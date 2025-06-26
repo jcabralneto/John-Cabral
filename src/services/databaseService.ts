@@ -50,6 +50,7 @@ export class DatabaseService {
             return updatedProfile
           } else {
             console.log('⚠️ Email already exists for another user, keeping current profile')
+            return existingProfile
           }
         }
         
