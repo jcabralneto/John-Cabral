@@ -7,6 +7,20 @@ export class DatabaseService {
     try {
       console.log('🔄 Getting/creating profile for:', email)
 
+      // First, check if email already exists for a different user
+      if (email) {
+        const { data: existingEmailProfile, error: emailCheckError } = await supabase
+          .from('users')
+          .select('id, email')
+          .eq('email', email)
+          .maybeSingle()
+
+        if (existingEmailProfile && existingEmailProfile.id !== userId && !emailCheckError) {
+          console.log('⚠️ Email already exists for different user, will create profile without email')
+          email = '' // Clear email to avoid constraint violation
+        }
+      }
+
       // First, try to get existing profile by user ID (primary key)
       const { data: existingProfile, error: fetchError } = await supabase
         .from('users')
@@ -18,86 +32,25 @@ export class DatabaseService {
         console.log('✅ Existing profile found by ID')
         
         // Update email if it's different and not null
-        if (existingProfile.email !== email && email) {
-          // Check if another profile already has this email
-          const { data: emailConflict } = await supabase
+        if (existingProfile.email !== email && email && !existingProfile.email) {
+          // Only update email if profile doesn't have one and new email is valid
+          const { data: updatedProfile, error: updateError } = await supabase
             .from('users')
-            .select('id')
-            .eq('email', email)
-            .neq('id', userId)
-            .maybeSingle()
-
-          if (!emailConflict) {
-            const { data: updatedProfile, error: updateError } = await supabase
-              .from('users')
-              .update({ email: email })
-              .eq('id', userId)
-              .select()
-              .single()
-            
-            if (updateError) {
-              // Handle specific duplicate key constraint violation
-              if (updateError.code === '23505' && updateError.message?.includes('users_email_unique_not_null')) {
-                console.warn('⚠️ Email already exists for another user (constraint violation), keeping current profile')
-                return existingProfile
-              }
-              
-              console.error('❌ Error updating profile email:', updateError)
-              return existingProfile // Return existing profile even if update fails
-            }
-            
-            console.log('✅ Profile email updated successfully')
-            return updatedProfile
-          } else {
-            console.log('⚠️ Email already exists for another user, keeping current profile')
+            .update({ email: email })
+            .eq('id', userId)
+            .select()
+            .single()
+          
+          if (updateError) {
+            console.warn('⚠️ Could not update email, keeping current profile:', updateError.message)
             return existingProfile
           }
+          
+          console.log('✅ Profile email updated successfully')
+          return updatedProfile
         }
         
         return existingProfile
-      }
-
-      // If no profile found by ID, check if one exists by email
-      if (email) {
-        const { data: profileByEmail, error: emailError } = await supabase
-          .from('users')
-          .select('*')
-          .eq('email', email)
-          .maybeSingle()
-
-        if (profileByEmail && !emailError) {
-          console.log('✅ Existing profile found by email')
-          
-          // If the profile has a different ID, we cannot update it due to primary key constraints
-          // Instead, we'll create a new profile with a different approach
-          if (profileByEmail.id !== userId) {
-            console.log('⚠️ Profile exists with different ID, cannot merge profiles')
-            
-            // Try to create new profile without email to avoid constraint violation
-            const newProfileData = {
-              id: userId,
-              name: email ? email.split('@')[0] : 'User',
-              email: null, // Set email to null to avoid constraint violation
-              role: 'regular' as const
-            }
-
-            const { data: newProfile, error: insertError } = await supabase
-              .from('users')
-              .insert(newProfileData)
-              .select()
-              .single()
-
-            if (insertError) {
-              console.error('❌ Error creating profile without email:', insertError)
-              return null
-            }
-
-            console.log('✅ Profile created without email to avoid conflict')
-            return newProfile
-          }
-          
-          return profileByEmail
-        }
       }
 
       console.log('ℹ️ Profile not found, creating new one...')
@@ -106,7 +59,7 @@ export class DatabaseService {
       const newProfileData = {
         id: userId,
         name: email ? email.split('@')[0] : 'User',
-        email: email,
+        email: email || null, // Use null if email is empty to avoid constraint issues
         role: email === 'admin@gridspertise.com' ? 'admin' as const : 'regular' as const
       }
 
@@ -123,7 +76,7 @@ export class DatabaseService {
         if (insertError.code === '23505') {
           console.log('🔄 Duplicate detected, fetching existing profile...')
           
-          // Try to find by ID first
+          // For duplicate key violations, try to get existing profile by ID
           const { data: existingById } = await supabase
             .from('users')
             .select('*')
@@ -133,46 +86,6 @@ export class DatabaseService {
           if (existingById) {
             console.log('✅ Retrieved existing profile by ID after duplicate error')
             return existingById
-          }
-
-          // If not found by ID, try by email
-          if (email) {
-            const { data: existingByEmail } = await supabase
-              .from('users')
-              .select('*')
-              .eq('email', email)
-              .maybeSingle()
-            
-            if (existingByEmail) {
-              console.log('✅ Retrieved existing profile by email after duplicate error')
-              return existingByEmail
-            }
-          }
-
-          // If email constraint is the issue, try creating without email
-          if (insertError.message?.includes('users_email_unique_not_null')) {
-            console.log('🔄 Email constraint violation, creating profile without email')
-            
-            const profileWithoutEmail = {
-              id: userId,
-              name: email ? email.split('@')[0] : 'User',
-              email: null,
-              role: 'regular' as const
-            }
-
-            const { data: profileNoEmail, error: noEmailError } = await supabase
-              .from('users')
-              .insert(profileWithoutEmail)
-              .select()
-              .single()
-
-            if (noEmailError) {
-              console.error('❌ Error creating profile without email:', noEmailError)
-              return null
-            }
-
-            console.log('✅ Profile created without email due to constraint')
-            return profileNoEmail
           }
         }
         
